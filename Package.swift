@@ -21,5 +21,8 @@ let package = Package(
                     "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
                 ]),
             ]),
+        .testTarget(
+            name: "QuotaBarAppTests",
+            dependencies: ["QuotaBar"]),
     ],
     swiftLanguageModes: [.v5])

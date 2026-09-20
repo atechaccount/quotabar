@@ -277,13 +277,20 @@ struct PreferencesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Toggle("Launch at login", isOn: Binding(
-                get: { launchAtLogin.isEnabled },
-                set: { launchAtLogin.setEnabled($0) }))
+            if launchAtLogin.state == .notDetermined {
+                LabeledContent("Launch at login") {
+                    Text(launchAtLogin.errorMessage == nil ? "Not checked" : "Unavailable")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLogin.state == .enabled },
+                    set: { launchAtLogin.setEnabled($0) }))
+            }
             if let error = launchAtLogin.errorMessage {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Providers") {
@@ -302,6 +309,7 @@ struct PreferencesView: View {
         .formStyle(.grouped)
         .padding()
         .frame(width: 480, height: 520)
+        .onAppear { launchAtLogin.loadStatusIfNeeded() }
     }
 }
 
