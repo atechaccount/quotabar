@@ -58,9 +58,10 @@ struct LayoutStabilityTests {
         })
         #expect(widths.count == 1, "the menu bar item changes width: \(widths.sorted())")
         #expect(StatusItemController.reservedPercent(100) == "100%")
-        // Trailing, not leading: leading padding reopens the gap between the
-        // mark and its number, which is what read as too wide.
-        #expect(StatusItemController.reservedPercent(9).hasPrefix("9%"))
+        // Leading, so the digits are right-aligned in a three-digit column and
+        // the percent sign does not slide left as the quota falls.
+        #expect(StatusItemController.reservedPercent(9).hasSuffix("9%"))
+        #expect(StatusItemController.reservedPercent(9).hasPrefix(StatusItemController.reservedPad))
         #expect(StatusItemController.reservedUnknown() == "???%")
         let mark = ProviderMarkImage.menuBarImage(provider: "claude", dark: false)
         let known = StatusItemController.statusTitle(mark: mark, percent: "100%").size().width
@@ -84,9 +85,11 @@ struct LayoutStabilityTests {
             "the menu bar lost its mark, which is the original bug")
         #expect(!carried.isTemplate, "a template image loses the brand color")
 
-        // Mark, then the number, with nothing else between them.
+        // Mark, then the reserved column, then the number - and nothing else.
         let text = title.string.replacingOccurrences(of: "\u{FFFC}", with: "")
-        #expect(text.hasPrefix("44%"), "something was inserted before the number: \(text)")
+        #expect(
+            text == StatusItemController.reservedPad + "44%",
+            "something was inserted around the number: \(text)")
 
         // The gap is the attachment's own trailing padding plus our kern, and it
         // has to be positive or the glyphs touch.
@@ -137,6 +140,56 @@ struct LayoutStabilityTests {
         #expect(
             inset + kern > 0,
             "a zero gap lets the mark and the number intersect")
+    }
+
+    /// The captain's own words: 4% should not be two characters where 100% is
+    /// four. The item held one width before this, but the number slid left
+    /// inside that width as the quota fell, which is a readout that moves in a
+    /// frame that does not. The digits now right-align in a three-digit column,
+    /// so the percent sign lands in the same place at every value.
+    ///
+    /// Measured in every face, because the column is measured in the chosen face
+    /// and the serif one draws FIGURE SPACE narrower than a digit.
+    @Test
+    func thePercentSignLandsInTheSamePlaceAtEveryValue() throws {
+        for choice in MenuBarFontChoice.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.font = choice
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: false, appearance: appearance)
+
+            var offsets: Set<Int> = []
+            var widths: Set<Int> = []
+            for value in [0.0, 4, 9, 44, 91, 100] {
+                let title = StatusItemController.statusTitle(
+                    mark: mark,
+                    percent: StatusItemController.reservedPercent(value),
+                    appearance: appearance)
+                let offset = try #require(
+                    StatusItemController.percentSignOffset(in: title),
+                    "\(choice.rawValue) lost its percent sign")
+                offsets.insert(Int((offset * 10).rounded()))
+                widths.insert(Int((title.size().width * 10).rounded()))
+            }
+            #expect(
+                offsets.count == 1,
+                "\(choice.rawValue) slides the percent sign: \(offsets.sorted())")
+            #expect(
+                widths.count == 1,
+                "\(choice.rawValue) changes the item width: \(widths.sorted())")
+        }
+    }
+
+    /// The column is reserved room for the hundreds digit, not spacing: it opens
+    /// between the number and the mark, and the mark keeps the number hard
+    /// against it at every value. What must not happen is the *kern* growing -
+    /// that would be the old too-wide gap coming back under a new name.
+    @Test
+    func theReservedColumnDoesNotLoosenTheMarksOwnGap() {
+        #expect(
+            ProviderMarkImage.menuBarGap - ProviderMarkImage.menuBarBackingInset < 1,
+            "the kern between the mark and the column grew")
+        #expect(ProviderMarkImage.menuBarGap < 4, "the gap is back to being wide")
     }
 
     // MARK: - Reserved columns

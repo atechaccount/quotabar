@@ -176,6 +176,10 @@ enum SelfTest {
             button: button,
             provider: model.menuBarReadout.provider,
             appearance: model.preferences.menuBarAppearance)
+        dumpReservedColumn(
+            button: button,
+            provider: model.menuBarReadout.provider,
+            appearance: model.preferences.menuBarAppearance)
 
     }
 
@@ -222,9 +226,12 @@ enum SelfTest {
             }
         }
 
-        // The widest run of empty columns between the first and last ink is the
-        // gap between the mark and its number, which is the thing that read as
-        // too wide. Reported in points so it can be compared against a target.
+        // The widest run of empty columns between the first and last ink. On a
+        // full-width readout that is the gap between the mark and its number; on
+        // a shorter one it is that gap plus the reserved column standing in for
+        // the digits the number does not have, which is why it is reported as
+        // ink-to-ink rather than as the gap. `menubargap` measures the gap
+        // proper, and `menubarcolumn` measures the column.
         var inkColumns: [Bool] = []
         for x in 0..<bitmap.pixelsWide {
             var any = false
@@ -247,7 +254,7 @@ enum SelfTest {
 
         return String(
             format: "frame=%.0fx%.0f px=%dx%d markRegionPx=%d markInk=%d totalInk=%d "
-                + "markToNumberGap=%.1fpt title=%@ drawn=%@",
+                + "markToInkGap=%.1fpt title=%@ drawn=%@",
             bounds.width, bounds.height, bitmap.pixelsWide, bitmap.pixelsHigh,
             markWidth, markInk, totalInk,
             CGFloat(widestGap) / scale,
@@ -255,9 +262,70 @@ enum SelfTest {
             markInk > 0 ? "yes" : "NO-MARK-INK")
     }
 
-    /// The gap between the mark and its number, measured at every digit count
-    /// and in both appearances. It has to be tiny, and it has to never reach
-    /// zero - a zero here means the glyphs have run into each other.
+    /// The reserved column, through the real status button. The item has to keep
+    /// one width from 4% to 100%, and the percent sign has to land in the same
+    /// place at every one of them - a readout that slides inside a fixed frame
+    /// is still a readout that moves. Both numbers are reported per value, per
+    /// appearance and per face, because the column is measured in the chosen
+    /// face and a face that draws FIGURE SPACE narrow is exactly where it would
+    /// come apart.
+    private static func dumpReservedColumn(
+        button: NSStatusBarButton,
+        provider: String?,
+        appearance: MenuBarAppearance)
+    {
+        let original = button.attributedTitle
+        defer {
+            button.attributedTitle = original
+            button.layoutSubtreeIfNeeded()
+        }
+
+        for face in MenuBarFontChoice.allCases {
+            var variant = appearance
+            variant.font = face
+            var lines: [String] = []
+            var widths: Set<Int> = []
+            var offsets: Set<Int> = []
+
+            for dark in [false, true] {
+                let mark = ProviderMarkImage.menuBarImage(
+                    provider: provider, dark: dark, appearance: variant)
+                for value in [4.0, 44, 100] {
+                    let title = StatusItemController.statusTitle(
+                        mark: mark,
+                        percent: StatusItemController.reservedPercent(value),
+                        appearance: variant)
+                    button.attributedTitle = title
+                    button.layoutSubtreeIfNeeded()
+
+                    // The drawn width, not the string's: this is the frame the
+                    // menu bar actually gives the item.
+                    let width = button.bounds.width
+                    let offset = StatusItemController.percentSignOffset(in: title) ?? -1
+                    widths.insert(Int((width * 10).rounded()))
+                    offsets.insert(Int((offset * 10).rounded()))
+                    lines.append(String(
+                        format: "%@/%.0f%%=%.1f/%.1f", dark ? "dark" : "light", value,
+                        width, offset))
+                }
+            }
+
+            print("SELFTEST menubarcolumn \(face.rawValue) \(lines.joined(separator: " ")) "
+                + "oneWidth=\(widths.count == 1 ? "true" : "NO") "
+                + "percentSignHeld=\(offsets.count == 1 ? "true" : "NO")")
+        }
+    }
+
+    /// The gap between the mark and its number, measured off the real button.
+    /// It has to be tiny, and it has to never reach zero - a zero here means the
+    /// glyphs have run into each other.
+    ///
+    /// Swept at the values that fill the reserved column, not at every digit
+    /// count. A shorter number puts the column's empty room between the mark and
+    /// its first inked digit on purpose, so measuring ink there would report the
+    /// reserved column and call it a gap. The full-width values are also the
+    /// tightest case: every shorter one has at least a digit width more in front
+    /// of it. `menubarcolumn` is where the shorter values are accounted for.
     /// What the appearance settings actually did to the drawn item: which plate
     /// is in play, whether the button's own layer carries the wide one, and what
     /// face and colour the number came out in.
@@ -359,15 +427,19 @@ enum SelfTest {
             for dark in [false, true] {
                 let mark = ProviderMarkImage.menuBarImage(
                     provider: provider, dark: dark, appearance: variant)
-                for value in [7.0, 44, 100] {
+                let readouts: [(name: String, percent: String)] = [
+                    ("100%", StatusItemController.reservedPercent(100)),
+                    ("unknown", StatusItemController.reservedUnknown()),
+                ]
+                for readout in readouts {
                     button.attributedTitle = StatusItemController.statusTitle(
                         mark: mark,
-                        percent: StatusItemController.reservedPercent(value),
+                        percent: readout.percent,
                         appearance: variant)
                     button.layoutSubtreeIfNeeded()
                     let gap = measuredGap(of: button)
                     let label = String(
-                        format: "%@/%@/%.0f%%", face.rawValue, dark ? "dark" : "light", value)
+                        format: "%@/%@/%@", face.rawValue, dark ? "dark" : "light", readout.name)
                     if let gap, gap < smallest {
                         smallest = gap
                         smallestAt = label

@@ -125,6 +125,81 @@ enum RenderCheck {
         }
 
         write(menuBarBackingSheet(), to: root.appendingPathComponent("menubar-backing.png"))
+        write(menuBarColumnSheet(), to: root.appendingPathComponent("menubar-column.png"))
+    }
+
+    /// The reserved column, drawn rather than argued about: the real status
+    /// title at 4%, 44% and 100%, over a light menu bar and a dark one, each row
+    /// starting at the same x. A rule is drawn down the percent sign's measured
+    /// offset, so a percent sign that moved between rows would leave the rule.
+    /// The digits are right-aligned in a three-digit column, which is what keeps
+    /// it there.
+    private static func menuBarColumnSheet() -> NSImage? {
+        let rowHeight: CGFloat = 30
+        let labelColumn: CGFloat = 76
+        let values: [Double] = [4, 44, 100]
+        let rows: [(name: String, dark: Bool)] = [("Light", false), ("Dark", true)]
+
+        var appearance = MenuBarAppearance.default
+        appearance.font = .system
+
+        let titles: [(dark: Bool, value: Double, title: NSAttributedString)] =
+            rows.flatMap { row in
+                let mark = ProviderMarkImage.menuBarImage(
+                    provider: "claude", dark: row.dark, appearance: appearance)
+                return values.map { value in
+                    (row.dark, value, StatusItemController.statusTitle(
+                        mark: mark,
+                        percent: StatusItemController.reservedPercent(value),
+                        appearance: appearance))
+                }
+            }
+        guard let widest = titles.map({ $0.title.size().width }).max() else { return nil }
+
+        let width = max(labelColumn + widest + 44, 260)
+        let height = rowHeight * CGFloat(titles.count) + 30
+
+        return NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
+            NSColor(srgbRed: 0.13, green: 0.13, blue: 0.15, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+            let caption: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+                .foregroundColor: NSColor(white: 0.82, alpha: 1),
+            ]
+            ("real status title; rule = measured percent sign" as NSString)
+                .draw(at: NSPoint(x: 10, y: 9), withAttributes: caption)
+
+            for (index, entry) in titles.enumerated() {
+                let y = 26 + CGFloat(index) * rowHeight
+                let cell = NSRect(
+                    x: labelColumn, y: y, width: width - labelColumn, height: rowHeight)
+
+                if entry.dark {
+                    NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1).setFill()
+                } else {
+                    NSColor(srgbRed: 0.96, green: 0.96, blue: 0.97, alpha: 1).setFill()
+                }
+                cell.fill()
+
+                (String(format: "%@ %.0f%%", entry.dark ? "Dark" : "Light", entry.value)
+                    as NSString).draw(at: NSPoint(x: 10, y: y + 9), withAttributes: caption)
+
+                let title = NSMutableAttributedString(attributedString: entry.title)
+                title.addAttribute(
+                    .foregroundColor,
+                    value: entry.dark ? NSColor.white : NSColor.black,
+                    range: NSRange(location: 0, length: title.length))
+                let size = title.size()
+                title.draw(at: NSPoint(x: labelColumn + 12, y: y + (rowHeight - size.height) / 2))
+
+                if let offset = StatusItemController.percentSignOffset(in: entry.title) {
+                    NSColor.systemRed.withAlphaComponent(0.55).setFill()
+                    NSRect(x: labelColumn + 12 + offset, y: y, width: 1, height: rowHeight).fill()
+                }
+            }
+            return true
+        }
     }
 
     /// A contact sheet of the menu bar mark at four backing strengths, over the

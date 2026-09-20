@@ -133,22 +133,44 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// than a 100% one and the menu bar moved as the quota fell. Measuring the
     /// two in the chosen face and kerning away the difference makes the reserved
     /// column hold in any face.
+    ///
+    /// The kern goes on the pad run itself, not on everything from the first pad
+    /// to the end of the string. `.kern` adds its value after every character in
+    /// its range, so a range that reached over the digits would widen the number
+    /// as well and move the percent sign that the column exists to hold still.
     private static func correctReservedPadding(
         in title: NSMutableAttributedString, from start: Int, font: NSFont)
     {
-        let padding = "\u{2007}"
         let text = title.string as NSString
-        let range = NSRange(location: start, length: title.length - start)
-        let first = text.range(of: padding, options: [], range: range)
-        guard first.location != NSNotFound else { return }
-        let padded = NSRange(location: first.location, length: title.length - first.location)
+        let pad = Character(reservedPad)
+        var length = 0
+        while start + length < title.length,
+              Character(text.substring(with: NSRange(location: start + length, length: 1))) == pad
+        {
+            length += 1
+        }
+        guard length > 0 else { return }
 
         func width(_ string: String) -> CGFloat {
             (string as NSString).size(withAttributes: [.font: font]).width
         }
-        let shortfall = width("0") - width(padding)
+        let shortfall = width("0") - width(reservedPad)
         guard abs(shortfall) > 0.01 else { return }
-        title.addAttribute(.kern, value: shortfall, range: padded)
+        title.addAttribute(
+            .kern, value: shortfall, range: NSRange(location: start, length: length))
+    }
+
+    /// Where the percent sign starts, measured from the leading edge of the
+    /// title. The reserved column exists so this number does not change as the
+    /// quota falls, and it is the number the evidence hooks report.
+    static func percentSignOffset(in title: NSAttributedString) -> CGFloat? {
+        let text = title.string as NSString
+        let mark = text.range(of: "%")
+        guard mark.location != NSNotFound else { return nil }
+        return title
+            .attributedSubstring(from: NSRange(location: 0, length: mark.location))
+            .size()
+            .width
     }
 
     init(model: AppModel) {
@@ -259,19 +281,35 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
+    /// The padding character: FIGURE SPACE, which in a tabular face is exactly
+    /// one digit wide. `correctReservedPadding` makes up the difference in the
+    /// faces where it is not.
+    static let reservedPad = "\u{2007}"
+
     /// Tabular figures stop a 1 being narrower than a 4, but they do not stop
     /// 9% being narrower than 100%. The number is padded to three digit widths
-    /// with FIGURE SPACE, which in a tabular font is exactly one digit wide, so
-    /// the item keeps one width from 0% to 100% and nothing in the menu bar
-    /// shuffles as the quota falls.
+    /// with FIGURE SPACE, so the item keeps one width from 0% to 100% and
+    /// nothing in the menu bar shuffles as the quota falls.
     ///
-    /// The padding is trailing, not leading: on the leading edge it opened a gap
-    /// between the mark and its number for every one and two digit value, which
-    /// is the whole reason the spacing read as too wide.
+    /// The padding is **leading**, so the digits are right-aligned in a
+    /// three-digit column and the percent sign lands in the same place at 4%,
+    /// 44% and 100%. Trailing padding also held the item's width, but it let the
+    /// number slide left inside that width as the quota fell, which is a moving
+    /// readout wearing a fixed frame.
+    ///
+    /// Leading padding was tried once before and rejected, and it is worth
+    /// saying why it comes back. At the time the mark and the number were
+    /// separated by AppKit's own ~15pt, so the column opened on top of a gap
+    /// that was already far too wide and the whole readout drifted away from its
+    /// mark. That gap is now `menuBarGap`, 1.5pt, set by the kern in
+    /// `statusTitle`, and the kern is applied to the mark rather than to the
+    /// number - so the column starts hard against the mark at every value, and
+    /// what sits between them is the reserved room for the hundreds digit rather
+    /// than spacing.
     static func reservedPercent(_ value: Double) -> String {
         let text = QuotaFormatting.percent(value)
         let digits = text.filter(\.isNumber).count
-        return text + String(repeating: "\u{2007}", count: max(0, 3 - digits))
+        return String(repeating: reservedPad, count: max(0, 3 - digits)) + text
     }
 
     /// An explicit unknown percentage with the same four glyph slots as 100%.
