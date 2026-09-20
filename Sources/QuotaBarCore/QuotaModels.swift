@@ -35,14 +35,64 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     public var displayName: String { label?.nilIfEmpty ?? provider }
     public var isFresh: Bool { state?.status == "fresh" }
 
-    public var headlineRemaining: Double? {
+    public var allWindows: [QuotaWindow] { windows ?? [] }
+
+    /// The short rolling window. On entry-tier plans this is the one that actually
+    /// constrains day-to-day work, so it is the headline everywhere in the UI.
+    public var sessionWindow: QuotaWindow? {
+        allWindows.first { $0.isSession }
+    }
+
+    public var weeklyWindow: QuotaWindow? {
+        allWindows.first { $0.isWeekly }
+    }
+
+    /// Session first, then the narrowest effective-availability scope, then the
+    /// lowest window. Always carries the label of whatever it measured, so the
+    /// number on screen is never an unattributed percentage.
+    public var headline: QuotaHeadline? {
         guard isFresh else { return nil }
-        let effective = quotaSemantics?.effectiveAvailability?
-            .compactMap(\.effectivePercentRemaining)
-        if let effective, !effective.isEmpty {
-            return effective.min()
+
+        if let session = sessionWindow, let remaining = session.percentRemaining {
+            return QuotaHeadline(
+                percentRemaining: remaining,
+                windowLabel: session.displayLabel,
+                resetsAt: session.resetsAt,
+                isSession: true)
         }
-        return windows?.compactMap(\.percentRemaining).min()
+
+        let scopes = (quotaSemantics?.effectiveAvailability ?? [])
+            .filter { $0.effectivePercentRemaining != nil }
+        if let lowest = scopes.min(by: {
+            ($0.effectivePercentRemaining ?? 101) < ($1.effectivePercentRemaining ?? 101)
+        }), let remaining = lowest.effectivePercentRemaining {
+            let matching = allWindows.first { $0.matchesScope(lowest.scope) }
+            return QuotaHeadline(
+                percentRemaining: remaining,
+                windowLabel: matching?.displayLabel ?? QuotaHeadline.humanize(lowest.scope),
+                resetsAt: matching?.resetsAt ?? soonestResetRaw,
+                isSession: false)
+        }
+
+        if let lowest = allWindows
+            .filter({ $0.percentRemaining != nil })
+            .min(by: { ($0.percentRemaining ?? 101) < ($1.percentRemaining ?? 101) }),
+            let remaining = lowest.percentRemaining
+        {
+            return QuotaHeadline(
+                percentRemaining: remaining,
+                windowLabel: lowest.displayLabel,
+                resetsAt: lowest.resetsAt,
+                isSession: lowest.isSession)
+        }
+
+        return nil
+    }
+
+    public var headlineRemaining: Double? { headline?.percentRemaining }
+
+    private var soonestResetRaw: String? {
+        allWindows.compactMap(\.resetsAt).min()
     }
 
     public var unavailableDescription: String {
@@ -77,6 +127,29 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     }
 }
 
+public struct QuotaHeadline: Sendable, Equatable {
+    public let percentRemaining: Double
+    /// Which window or scope the percentage measures, so the UI can always say so.
+    public let windowLabel: String
+    public let resetsAt: String?
+    public let isSession: Bool
+
+    public init(percentRemaining: Double, windowLabel: String, resetsAt: String?, isSession: Bool) {
+        self.percentRemaining = percentRemaining
+        self.windowLabel = windowLabel
+        self.resetsAt = resetsAt
+        self.isSession = isSession
+    }
+
+    static func humanize(_ scope: String?) -> String {
+        guard let scope, !scope.isEmpty else { return "overall" }
+        return scope
+            .split(separator: "_")
+            .map { $0 == "gpt" ? "GPT" : $0.capitalized }
+            .joined(separator: "/")
+    }
+}
+
 public struct QuotaWindow: Decodable, Identifiable, Sendable {
     public let id: String?
     public let label: String?
@@ -86,7 +159,35 @@ public struct QuotaWindow: Decodable, Identifiable, Sendable {
     public let resetsAt: String?
     public let windowSeconds: Double?
 
-    public var stableID: String { id ?? label ?? UUID().uuidString }
+    public var stableID: String { id ?? label ?? kind ?? "window" }
+
+    public var displayLabel: String {
+        label?.nilIfEmpty ?? kind?.nilIfEmpty ?? id?.nilIfEmpty ?? "window"
+    }
+
+    /// quota-axi labels short rolling windows inconsistently across providers, so
+    /// classification leans on `kind`, then the window id, then its duration.
+    public var isSession: Bool {
+        if let kind, !kind.isEmpty { return kind == "session" }
+        if let id, id.contains("hour") || id.contains("session") { return true }
+        if let windowSeconds { return windowSeconds <= 86_400 }
+        return false
+    }
+
+    public var isWeekly: Bool {
+        if let kind, !kind.isEmpty { return kind == "weekly" }
+        if let id, id.contains("week") { return true }
+        if let windowSeconds { return windowSeconds >= 518_400 }
+        return false
+    }
+
+    /// Antigravity-style providers name an effective-availability scope after the
+    /// window it summarizes (`gemini` -> `gemini_weekly`).
+    func matchesScope(_ scope: String?) -> Bool {
+        guard let scope, !scope.isEmpty, scope != "all_models" else { return false }
+        guard let id else { return false }
+        return id == scope || id.hasPrefix(scope + "_") || id.hasSuffix("_" + scope)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id

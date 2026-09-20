@@ -36,3 +36,15 @@ public enum QuotaFormatting {
         return "resets in \(hours / 24)d \(hours % 24)h"
     }
 }
+
+public extension QuotaFormatting {
+    /// "every 5h" / "every 7d" - makes it obvious which windows come back often.
+    static func cadence(windowSeconds: Double?) -> String? {
+        guard let windowSeconds, windowSeconds > 0 else { return nil }
+        let seconds = Int(windowSeconds.rounded())
+        if seconds % 604_800 == 0 { return "every \(seconds / 604_800)w" }
+        if seconds % 86_400 == 0 { return "every \(seconds / 86_400)d" }
+        if seconds % 3_600 == 0 { return "every \(seconds / 3_600)h" }
+        return "every \(max(1, seconds / 60))m"
+    }
+}

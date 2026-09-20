@@ -11,8 +11,13 @@ struct QuotaParserTests {
         #expect(snapshot.providers.count == 11)
 
         let claude = try #require(snapshot.providers.first { $0.provider == "claude" })
-        #expect(claude.headlineRemaining == 52)
+        // The headline is the short rolling session window, not the weekly one.
+        let headline = try #require(claude.headline)
+        #expect(headline.isSession)
+        #expect(headline.windowLabel == "session")
+        #expect(headline.percentRemaining == claude.sessionWindow?.percentRemaining)
         #expect(claude.windows?.count == 2)
+        #expect(claude.weeklyWindow?.percentRemaining == 52)
 
         let cursor = try #require(snapshot.providers.first { $0.provider == "cursor" })
         #expect(!cursor.isFresh)
