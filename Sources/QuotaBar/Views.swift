@@ -453,6 +453,18 @@ struct OverviewProviderRow: View {
                         .font(Typography.font(10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    // The same countdown the provider pages render, so the
+                    // overview answers "when does this come back?" without a
+                    // trip into a tab. A provider that reports no reset time
+                    // draws no line at all rather than a dash: this row is too
+                    // tight to spend a line on nothing.
+                    if let reset = headlineResetLine {
+                        Text(reset)
+                            .font(Typography.font(10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(width: Layout.headlineColumn, alignment: .trailing)
             }
@@ -468,6 +480,10 @@ struct OverviewProviderRow: View {
         .padding(.top, 15)
         .padding(.bottom, 14)
         .accessibilityElement(children: .combine)
+    }
+
+    private var headlineResetLine: String? {
+        QuotaFormatting.resetLine(from: provider.headline?.resetsAt, now: now)
     }
 }
 
@@ -673,9 +689,10 @@ struct WindowSection: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// The reserved line is always drawn here, so a window with no reset time
+    /// says so rather than leaving a gap the rest of the page has to close.
     private var resetText: String {
-        guard let reset = QuotaFormatting.date(from: window.resetsAt) else { return "No reset time" }
-        return QuotaFormatting.resetDescription(reset, now: now).capitalizedFirst
+        QuotaFormatting.resetLine(from: window.resetsAt, now: now) ?? "No reset time"
     }
 }
 
@@ -904,13 +921,5 @@ struct ActionRows: View {
         } else {
             button
         }
-    }
-}
-
-private extension String {
-    /// "resets in 4h 54m" reads as a sentence on its own line in the window rows.
-    var capitalizedFirst: String {
-        guard let first else { return self }
-        return first.uppercased() + dropFirst()
     }
 }

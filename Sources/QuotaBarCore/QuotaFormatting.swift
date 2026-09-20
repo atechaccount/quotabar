@@ -35,6 +35,19 @@ public enum QuotaFormatting {
         if hours < 24 { return "resets in \(hours)h \(minutes % 60)m" }
         return "resets in \(hours / 24)d \(hours % 24)h"
     }
+
+    /// The one countdown line in the interface: "Resets in 4h 54m" for a raw
+    /// reset stamp, and nil when the provider reports no reset time at all.
+    ///
+    /// Nil rather than a placeholder, so a caller with no room for one - the
+    /// overview rows - can simply draw nothing, while the provider pages, which
+    /// have a reserved line to fill, say so in words.
+    public static func resetLine(from raw: String?, now: Date = Date()) -> String? {
+        guard let date = date(from: raw) else { return nil }
+        let sentence = resetDescription(date, now: now)
+        guard let first = sentence.first else { return nil }
+        return first.uppercased() + sentence.dropFirst()
+    }
 }
 
 public extension QuotaFormatting {
