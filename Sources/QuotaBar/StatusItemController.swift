@@ -35,6 +35,39 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             imageSize: .zero, usedVendorMark: false)
     }
 
+    static let titleFont = NSFont.monospacedDigitSystemFont(
+        ofSize: NSFont.systemFontSize, weight: .regular)
+
+    /// The mark and its number as one attributed string, with the gap between
+    /// them set explicitly rather than left to AppKit.
+    static func statusTitle(mark: NSImage, percent: String) -> NSAttributedString {
+        let attachment = NSTextAttachment()
+        attachment.image = mark
+        let side = ProviderMarkImage.menuBarSide
+        // Centred on the text's own cap height, so the mark sits on the same
+        // optical line as the digits rather than on the text baseline.
+        attachment.bounds = NSRect(
+            x: 0,
+            y: (titleFont.capHeight - side) / 2,
+            width: side,
+            height: side)
+
+        let title = NSMutableAttributedString(attachment: attachment)
+        guard !percent.isEmpty else { return title }
+
+        // The mark image carries `backingInset` of transparent padding on its
+        // trailing edge, which is part of what the eye reads as the gap, so the
+        // kern only has to make up the difference.
+        let kern = ProviderMarkImage.menuBarGap - ProviderMarkImage.backingInset
+        title.addAttribute(
+            .kern, value: kern, range: NSRange(location: title.length - 1, length: 1))
+        title.append(NSAttributedString(string: percent, attributes: [
+            .font: titleFont,
+            .foregroundColor: NSColor.labelColor,
+        ]))
+        return title
+    }
+
     init(model: AppModel) {
         self.model = model
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -42,21 +75,37 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
         statusItem.behavior = [.terminationOnRemoval]
         if let button = statusItem.button {
-            button.imagePosition = .imageLeft
+            // The mark travels inside the attributed title as a text attachment
+            // rather than in `button.image`.
+            //
+            // This is not decoration. `button.image` plus `button.title` puts a
+            // fixed ~15pt of AppKit spacing between the two, and none of
+            // `imagePosition` or `imageHugsTitle` moves it - all four
+            // combinations were measured at exactly 15.0pt. Carrying the mark as
+            // an attachment makes the gap a typographic one, which is ours to
+            // set, and `ProviderMarkImage.menuBarGap` sets it.
+            button.imagePosition = .noImage
             // Tabular figures in the menu bar too. The title is drawn by AppKit,
             // not SwiftUI, so the popover's `.monospacedDigit()` never reached
             // it: a 1 was narrower than a 4 and the item breathed as the number
             // changed.
-            button.font = NSFont.monospacedDigitSystemFont(
-                ofSize: NSFont.systemFontSize, weight: .regular)
+            button.font = Self.titleFont
             button.target = self
             button.action = #selector(togglePopover(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         popover.behavior = .transient
-        // The dropdown should appear, not unfold. This is behavior rather than a
-        // preference because nobody wants a slow menu.
+        // Never animated. The dropdown should appear, not unfold.
+        //
+        // `animates` also governs the size transition between pages, so turning
+        // it back on once the popover is up was tried - and measured. The
+        // resize lands instantly either way, because the height comes from the
+        // hosting controller's `preferredContentSize` and NSPopover does not
+        // animate that. All `animates = true` would buy is an animated close
+        // when the popover is dismissed by clicking away, which is the slow
+        // unfold that was asked for removal. `resizeAnimationReport()` prints
+        // the evidence from the running app.
         popover.animates = false
         popover.delegate = self
         let host = NSHostingController(
@@ -87,20 +136,20 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let dark = Self.isDark(button.effectiveAppearance)
         let image = ProviderMarkImage.menuBarImage(provider: readout.provider, dark: dark)
 
-        let title = readout.percentRemaining.map { " " + Self.reservedPercent($0) } ?? ""
+        let title = readout.percentRemaining.map { Self.reservedPercent($0) } ?? ""
 
-        button.image = image
-        button.title = title
-        button.imagePosition = title.isEmpty ? .imageOnly : .imageLeft
+        button.image = nil
+        button.imagePosition = .noImage
+        button.attributedTitle = Self.statusTitle(mark: image, percent: title)
         button.toolTip = readout.accessibilityDescription
         button.setAccessibilityLabel(readout.accessibilityDescription)
 
         rendered = RenderedStatusItem(
             provider: readout.provider,
             title: title,
-            hasImage: button.image != nil,
-            imageIsTemplate: button.image?.isTemplate ?? false,
-            imageSize: button.image?.size ?? .zero,
+            hasImage: Self.markImage(in: button.attributedTitle) != nil,
+            imageIsTemplate: Self.markImage(in: button.attributedTitle)?.isTemplate ?? false,
+            imageSize: Self.markImage(in: button.attributedTitle)?.size ?? .zero,
             usedVendorMark: readout.provider.map { ProviderMarkImage.hasVendorMark(for: $0) } ?? false)
     }
 
@@ -113,10 +162,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// with FIGURE SPACE, which in a tabular font is exactly one digit wide, so
     /// the item keeps one width from 0% to 100% and nothing in the menu bar
     /// shuffles as the quota falls.
+    ///
+    /// The padding is trailing, not leading: on the leading edge it opened a gap
+    /// between the mark and its number for every one and two digit value, which
+    /// is the whole reason the spacing read as too wide.
     static func reservedPercent(_ value: Double) -> String {
         let text = QuotaFormatting.percent(value)
         let digits = text.filter(\.isNumber).count
-        return String(repeating: "\u{2007}", count: max(0, 3 - digits)) + text
+        return text + String(repeating: "\u{2007}", count: max(0, 3 - digits))
     }
 
     private func observeModel() {
@@ -167,6 +220,21 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     // MARK: - Evidence hooks
 
     var button: NSStatusBarButton? { statusItem.button }
+
+    /// The mark the status item is actually carrying. This is the guard against
+    /// the original bug: a menu bar with a percentage and no icon.
+    static func markImage(in title: NSAttributedString) -> NSImage? {
+        var found: NSImage?
+        title.enumerateAttribute(
+            .attachment, in: NSRange(location: 0, length: title.length))
+        { value, _, stop in
+            if let image = (value as? NSTextAttachment)?.image {
+                found = image
+                stop.pointee = true
+            }
+        }
+        return found
+    }
 
     /// Opens the popover, measures what SwiftUI actually laid out inside it, and
     /// closes it again. `ImageRenderer` cannot draw a `ScrollView`, so the
@@ -219,7 +287,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         for page in pages {
             model.select(page)
             guard let view = popover.contentViewController?.view else { continue }
-            try? await Task.sleep(nanoseconds: 120_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             view.layoutSubtreeIfNeeded()
             let name: String
             switch page {
@@ -230,5 +298,59 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 format: "%@=%.0fx%.0f", name, view.frame.width, view.frame.height))
         }
         return lines
+    }
+
+    /// Establishes whether the popover's size transition is actually animated on
+    /// this surface, rather than assuming it either way. Selects a page, samples
+    /// the frame immediately, then samples again after the animation would have
+    /// finished. A height that is mid-flight on the first sample and settled on
+    /// the second is a real animation; two identical samples mean the resize
+    /// landed instantly whatever `animates` says.
+    func resizeAnimationReport() async -> String {
+        let originalPage = model.resolvedPage
+        let originalFocus = model.preferences.focusedProvider
+        defer {
+            model.select(originalPage)
+            if !originalFocus.isEmpty { model.preferences.focus(on: originalFocus) }
+            refresh()
+        }
+
+        showPopover()
+        defer { closePopover() }
+
+        guard let view = popover.contentViewController?.view,
+              let provider = model.tabProviders.first
+        else { return "inconclusive=no-provider-page animates=\(popover.animates)" }
+
+        func settle() async {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            view.layoutSubtreeIfNeeded()
+        }
+
+        // Overview against a provider page: the largest height difference the
+        // app actually has, so an animation has something to animate.
+        let wasAnimating = popover.animates
+        popover.animates = true
+        defer { popover.animates = wasAnimating }
+
+        model.select(.overview)
+        await settle()
+        let from = view.frame.height
+
+        model.select(.provider(provider.provider))
+        try? await Task.sleep(nanoseconds: 40_000_000)
+        view.layoutSubtreeIfNeeded()
+        let immediate = view.frame.height
+        await settle()
+        let settled = view.frame.height
+
+        let animated = abs(immediate - settled) > 1
+        return String(
+            format: "animates=%@ from=%.0f immediate=%.0f settled=%.0f transition=%@ "
+                + "sizesDiffer=%@",
+            popover.animates ? "yes" : "no",
+            from, immediate, settled,
+            animated ? "animated" : "instant",
+            abs(from - settled) > 1 ? "yes" : "no")
     }
 }

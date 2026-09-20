@@ -12,10 +12,14 @@ enum Layout {
     /// Past this the strip scrolls instead of squeezing every tab thinner.
     static let maxTabsAcross = 5
 
-    /// The page area is a fixed height, so the popover never resizes when the
-    /// page changes. A panel that grows and shrinks under the pointer is the
-    /// most visible kind of layout shift there is.
-    static let contentHeight: CGFloat = 468
+    /// The page area sizes to its page, capped so a long one scrolls instead of
+    /// turning the popover into a column. A fixed height was tried and rejected:
+    /// it makes every short provider page as tall as the longest page in the set.
+    ///
+    /// This is not the layout-stability rule relaxing. That rule is about
+    /// content moving *within* a page as values change width, and it still
+    /// holds - tabular figures and reserved columns, both unchanged.
+    static let maxContentHeight: CGFloat = 520
 
     /// Right-hand number columns. Fixed widths are what make the numbers line up
     /// with each other rather than with whatever label happens to precede them,
@@ -36,6 +40,25 @@ enum Layout {
         let across = CGFloat(max(1, min(count, maxTabsAcross)))
         let available = popoverWidth - tabStripPadding * 2 - tabSpacing * (across - 1)
         return available / across
+    }
+}
+
+/// One type scale for the whole interface.
+///
+/// Sizes are written as the base size they were designed at and passed through
+/// a single factor, so the interface gets smaller or larger as one system
+/// rather than label by label. The floor keeps the fine print readable: below
+/// it the three smallest steps collapse together, which is intended.
+enum Typography {
+    static let scale: CGFloat = 0.9
+    static let minimumSize: CGFloat = 9.5
+
+    static func size(_ base: CGFloat) -> CGFloat {
+        max(minimumSize, (base * scale * 2).rounded() / 2)
+    }
+
+    static func font(_ base: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size(base), weight: weight)
     }
 }
 
@@ -68,9 +91,7 @@ struct QuotaMenuView: View {
                 ScrollView {
                     body
                 }
-                // A fixed height, not a maximum: the popover then keeps one size
-                // for every page instead of resizing as tabs are switched.
-                .frame(height: Layout.contentHeight)
+                .frame(maxHeight: Layout.maxContentHeight)
                 .scrollBounceBehavior(.basedOnSize)
             } else {
                 body
@@ -99,7 +120,7 @@ struct QuotaMenuView: View {
                 }
             } else {
                 Text("That provider is no longer in the snapshot.")
-                    .font(.system(size: 11))
+                    .font(Typography.font(11))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -183,7 +204,7 @@ struct TabButton<Glyph: View>: View {
                 glyph
                     .frame(height: 17)
                 Text(title)
-                    .font(.system(size: 10.5, weight: isSelected ? .semibold : .regular))
+                    .font(Typography.font(10.5, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -259,7 +280,7 @@ struct OverviewPage: View {
 
             if model.snapshot == nil {
                 Text("Loading provider quotas…")
-                    .font(.system(size: 11))
+                    .font(Typography.font(11))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 28)
@@ -280,18 +301,18 @@ struct OverviewPage: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Overview")
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(Typography.font(19, weight: .semibold))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(freshness)
                     Text(focusSentence)
                 }
-                .font(.system(size: 11))
+                .font(Typography.font(11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
                 if let error = model.lastError {
                     Text(error)
-                        .font(.system(size: 11))
+                        .font(Typography.font(11))
                         .foregroundStyle(.orange)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -327,9 +348,9 @@ struct OverviewPage: View {
     private var emptyOverview: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No provider is reporting measurable quota")
-                .font(.system(size: 12, weight: .medium))
+                .font(Typography.font(12, weight: .medium))
             Text("Sign in to a provider, or turn one on in Preferences to see its page anyway.")
-                .font(.system(size: 11))
+                .font(Typography.font(11))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,15 +369,15 @@ struct OverviewPage: View {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(count == 1 ? "1 more provider" : "\(count) more providers")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Typography.font(11, weight: .semibold))
                             .foregroundStyle(.primary)
                         Text("Hidden until configured or measurable")
-                            .font(.system(size: 11))
+                            .font(Typography.font(11))
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
                     Text("Preferences ›")
-                        .font(.system(size: 11))
+                        .font(Typography.font(11))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 12)
@@ -383,10 +404,10 @@ struct OverviewProviderRow: View {
             HStack(alignment: .center, spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(provider.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.font(13, weight: .semibold))
                         .lineLimit(1)
                     Text(provider.overviewContext)
-                        .font(.system(size: 10))
+                        .font(Typography.font(10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -397,10 +418,10 @@ struct OverviewProviderRow: View {
                 if let headline = provider.headline {
                     VStack(alignment: .trailing, spacing: 0) {
                         Text(QuotaFormatting.percent(headline.percentRemaining))
-                            .font(.system(size: 14, weight: .medium))
+                            .font(Typography.font(14, weight: .medium))
                             .monospacedDigit()
                         Text("\(headline.windowLabel) left")
-                            .font(.system(size: 10))
+                            .font(Typography.font(10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -432,7 +453,7 @@ struct OverviewLane: View {
     var body: some View {
         GridRow {
             Text(window.titleLabel)
-                .font(.system(size: 10, weight: .medium))
+                .font(Typography.font(10, weight: .medium))
                 .lineLimit(1)
                 .frame(maxWidth: Layout.laneLabelColumn, alignment: .leading)
                 .gridColumnAlignment(.leading)
@@ -443,7 +464,7 @@ struct OverviewLane: View {
                 height: 6)
 
             Text(window.percentRemaining.map { QuotaFormatting.percent($0) } ?? "—")
-                .font(.system(size: 10, weight: .semibold))
+                .font(Typography.font(10, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(isCritical ? Color(brandHex: "#C94D3A") : Color.primary)
                 .frame(width: Layout.laneValueColumn, alignment: .trailing)
@@ -498,11 +519,11 @@ struct SignedInProviderPage: View {
             if let credits = creditsLine {
                 HStack(spacing: 8) {
                     Text("Credits")
-                        .font(.system(size: 11))
+                        .font(Typography.font(11))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Text(credits)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typography.font(11, weight: .medium))
                         .monospacedDigit()
                 }
                 .padding(.top, 14)
@@ -518,16 +539,16 @@ struct SignedInProviderPage: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(provider.displayName)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(Typography.font(19, weight: .semibold))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(provider.accountIdentity)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typography.font(11, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     // Always drawn, so a provider without a plan does not make
                     // this page a line shorter than the one beside it.
                     Text(provider.planDescription ?? " ")
-                        .font(.system(size: 11))
+                        .font(Typography.font(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -542,7 +563,7 @@ struct SignedInProviderPage: View {
                 Text(ProviderPresentation.humanizeSource(provider.source))
                     .lineLimit(1)
             }
-            .font(.system(size: 10))
+            .font(Typography.font(10))
             .foregroundStyle(.secondary)
             // Fixed, so "Updated just now" and "Updated 12m ago" do not move the
             // name beside them.
@@ -565,11 +586,11 @@ struct SignedInProviderPage: View {
     private var boundaryNote: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "info.circle")
-                .font(.system(size: 11))
+                .font(Typography.font(11))
                 .foregroundStyle(accent)
             Text("QuotaBar displays the current quota-axi snapshot. It does not contact "
                 + "\(provider.brand.vendor) or manage this account.")
-                .font(.system(size: 10))
+                .font(Typography.font(10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -588,7 +609,7 @@ struct WindowSection: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(window.titleLabel)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(Typography.font(16, weight: .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -599,10 +620,10 @@ struct WindowSection: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(window.percentRemaining.map { "\(QuotaFormatting.percent($0)) left" }
                         ?? "Not measurable")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(Typography.font(16, weight: .semibold))
                         .lineLimit(1)
                     Text(resetText)
-                        .font(.system(size: 11))
+                        .font(Typography.font(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -639,7 +660,7 @@ struct UnavailableProviderPage: View {
             diagnostics
             Text("QuotaBar only displays quota-axi output. It does not open provider login "
                 + "flows or read credentials itself.")
-                .font(.system(size: 10))
+                .font(Typography.font(10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 12)
@@ -652,9 +673,9 @@ struct UnavailableProviderPage: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(provider.displayName)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(Typography.font(19, weight: .semibold))
                 Text(provider.account?.email ?? "No account detected")
-                    .font(.system(size: 11))
+                    .font(Typography.font(11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -673,9 +694,9 @@ struct UnavailableProviderPage: View {
                 .background(RoundedRectangle(cornerRadius: 16).fill(accent.opacity(0.1)))
 
             Text(provider.unavailableHeadline)
-                .font(.system(size: 16, weight: .semibold))
+                .font(Typography.font(16, weight: .semibold))
             Text(provider.unavailableGuidance)
-                .font(.system(size: 11))
+                .font(Typography.font(11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -695,7 +716,7 @@ struct UnavailableProviderPage: View {
                 .foregroundStyle(.primary)
                 + Text(" Pick another provider to change the menu bar; turn "
                     + "\(provider.displayName) off in Preferences to remove this tab."))
-                .font(.system(size: 10))
+                .font(Typography.font(10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(8)
@@ -711,7 +732,7 @@ struct UnavailableProviderPage: View {
         if !rows.isEmpty {
             VStack(spacing: 0) {
                 Text("SOURCES CHECKED")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(Typography.font(10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .kerning(0.4)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -724,14 +745,14 @@ struct UnavailableProviderPage: View {
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.title)
-                                .font(.system(size: 11))
+                                .font(Typography.font(11))
                             Text(row.sourceID)
-                                .font(.system(size: 9.5))
+                                .font(Typography.font(9.5))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 8)
                         Text(row.outcome)
-                            .font(.system(size: 10))
+                            .font(Typography.font(10))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                     }
@@ -764,7 +785,7 @@ struct StatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .font(Typography.font(10, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
@@ -826,11 +847,11 @@ struct ActionRows: View {
         let button = Button(action: action) {
             HStack(spacing: 12) {
                 Text(title)
-                    .font(.system(size: 12))
+                    .font(Typography.font(12))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(shortcut ?? "")
-                    .font(.system(size: 12))
+                    .font(Typography.font(12))
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, Layout.contentPadding)

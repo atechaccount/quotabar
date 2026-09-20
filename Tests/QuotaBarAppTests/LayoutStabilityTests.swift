@@ -51,14 +51,42 @@ struct LayoutStabilityTests {
     /// setting, so it reserves its own width in figure spaces.
     @Test
     func theMenuBarTitleKeepsOneWidthFromZeroToOneHundred() {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let font = StatusItemController.titleFont
         let widths = Set([0.0, 9, 10, 44, 91, 100].map { value -> Int in
-            let title = " " + StatusItemController.reservedPercent(value)
+            let title = StatusItemController.reservedPercent(value)
             return Int((title as NSString).size(withAttributes: [.font: font]).width.rounded())
         })
         #expect(widths.count == 1, "the menu bar item changes width: \(widths.sorted())")
         #expect(StatusItemController.reservedPercent(100) == "100%")
-        #expect(StatusItemController.reservedPercent(9).hasSuffix("9%"))
+        // Trailing, not leading: leading padding reopens the gap between the
+        // mark and its number, which is what read as too wide.
+        #expect(StatusItemController.reservedPercent(9).hasPrefix("9%"))
+    }
+
+    /// The mark travels in the attributed title so the gap between it and the
+    /// number is ours to set. `button.image` plus `button.title` pins that gap
+    /// at AppKit's own ~15pt, which no `imagePosition` or `imageHugsTitle`
+    /// combination changes.
+    @Test
+    func theMenuBarMarkSitsRightNextToItsNumber() throws {
+        let mark = ProviderMarkImage.menuBarImage(provider: "claude", dark: false)
+        let title = StatusItemController.statusTitle(
+            mark: mark, percent: StatusItemController.reservedPercent(44))
+
+        let carried = try #require(
+            StatusItemController.markImage(in: title),
+            "the menu bar lost its mark, which is the original bug")
+        #expect(!carried.isTemplate, "a template image loses the brand color")
+
+        // Mark, then the number, with nothing else between them.
+        let text = title.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+        #expect(text.hasPrefix("44%"), "something was inserted before the number: \(text)")
+
+        // The gap is the attachment's own trailing padding plus our kern, and it
+        // has to be positive or the glyphs touch.
+        let gap = ProviderMarkImage.menuBarGap
+        #expect(gap > 0, "a zero gap lets the mark and the number intersect")
+        #expect(gap < 4, "the gap is back to being wide")
     }
 
     // MARK: - Reserved columns
@@ -171,11 +199,11 @@ struct LayoutStabilityTests {
 
     // MARK: - The panel itself
 
-    /// The most visible shift of all: the window resizing under the pointer as
-    /// tabs are switched. The captain named Codex and Claude, which differ in
-    /// both digit shape and digit count and in how many windows they report.
+    /// The panel sizes to its page on purpose, so pages of different shapes may
+    /// differ in height. Two things must still hold: the width never changes,
+    /// and the same page measured twice is the same size.
     @Test
-    func everyPageAsksForTheSamePanelSize() throws {
+    func thePanelKeepsOneWidthAndOneSizePerPage() throws {
         let snapshot = try QuotaParser.decode("""
         {"providers":[
           {"provider":"claude","label":"Claude","plan":"pro","account":{"email":"a@b.c"},
@@ -195,18 +223,26 @@ struct LayoutStabilityTests {
             startRefreshing: false, preferences: preferences,
             snapshot: snapshot, lastSuccessAt: now)
 
-        var sizes: Set<String> = []
-        for page in [MenuPage.overview, .provider("claude"), .provider("codex"), .provider("cursor")] {
+        func size(_ page: MenuPage) -> CGSize {
             model.select(page)
             let host = NSHostingController(rootView: QuotaMenuView(model: model))
             host.sizingOptions = [.preferredContentSize]
             host.view.layoutSubtreeIfNeeded()
-            let size = host.view.fittingSize
-            sizes.insert("\(Int(size.width))x\(Int(size.height))")
+            return host.view.fittingSize
         }
 
-        #expect(sizes.count == 1, "pages ask for different panel sizes: \(sizes.sorted())")
-        #expect(sizes.first?.hasPrefix("\(Int(Layout.popoverWidth))x") == true)
+        let pages: [MenuPage] = [.overview, .provider("claude"), .provider("codex"),
+                                 .provider("cursor")]
+        var widths: Set<CGFloat> = []
+        for page in pages {
+            let first = size(page)
+            widths.insert(first.width)
+            // Visit another page and come back: the same page must measure the same.
+            _ = size(.overview)
+            #expect(size(page) == first, "\(page) measured two different sizes")
+        }
+
+        #expect(widths == [Layout.popoverWidth], "the panel changed width: \(widths.sorted())")
     }
 
     /// Claude and Codex specifically, which is the pair he switches between.

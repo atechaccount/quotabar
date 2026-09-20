@@ -32,6 +32,11 @@ enum ProviderMarkImage {
     /// How far the mark is inset inside its backing plate.
     static let backingInset: CGFloat = 2
 
+    /// The whole gap between the mark and the number beside it in the menu bar.
+    /// Small enough to read as one item, large enough that the glyphs never
+    /// touch at any percentage width.
+    static let menuBarGap: CGFloat = 1.5
+
     /// Deliberately faint. The backing exists to keep a colored mark legible
     /// when a bright or busy wallpaper shows through a translucent menu bar,
     /// not to draw a button in the menu bar. Anything stronger than this reads

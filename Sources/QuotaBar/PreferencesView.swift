@@ -123,7 +123,7 @@ struct PreferencesView: View {
                 Text("On first launch QuotaBar shows a provider only when quota-axi reports "
                     + "fresh, measurable quota for it. These switches stay under your control "
                     + "afterwards: a later snapshot never turns one back on or off.")
-                    .font(.system(size: 10))
+                    .font(Typography.font(10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 7)
@@ -138,7 +138,7 @@ struct PreferencesView: View {
     private var launchAtLoginControl: some View {
         if launchAtLogin.state == .notDetermined {
             Text(launchAtLogin.errorMessage == nil ? "Not checked" : "Unavailable")
-                .font(.system(size: 11))
+                .font(Typography.font(11))
                 .foregroundStyle(.secondary)
         } else {
             Toggle("", isOn: Binding(
@@ -195,7 +195,7 @@ struct PreferencesView: View {
             Text("- \(meaning)")
                 .foregroundStyle(.secondary)
         }
-        .font(.system(size: 10))
+        .font(Typography.font(10))
     }
 }
 
@@ -210,14 +210,14 @@ struct ProviderVisibilityRow: View {
         HStack(spacing: 8) {
             ProviderMark(provider: provider.provider, size: 15)
             Text(provider.displayName)
-                .font(.system(size: 12))
+                .font(Typography.font(12))
                 .lineLimit(1)
             Spacer(minLength: 12)
             StatusText(
                 text: provider.availability.label,
                 tone: provider.availability.tone,
                 weight: .regular)
-                .font(.system(size: 10))
+                .font(Typography.font(10))
             Toggle("", isOn: Binding(get: { isVisible }, set: setVisible))
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -266,7 +266,7 @@ struct SectionTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(Typography.font(11, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.top, isFirst ? 0 : 15)
@@ -296,9 +296,9 @@ struct PreferenceRow<Control: View>: View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12))
+                    .font(Typography.font(12))
                 Text(note)
-                    .font(.system(size: 9.5))
+                    .font(Typography.font(9.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

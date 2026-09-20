@@ -17,6 +17,16 @@
 
 ## Recent round
 
+Three changes after the captain ran the build, plus a sharpening of the first.
+
+- **The menu bar mark sits right next to its number.** The gap was 15pt and none of `imagePosition` or `imageHugsTitle` moved it - all four combinations measured at exactly 15.0pt, because that spacing is AppKit's own when a button carries `image` plus `title`. The mark now travels as a text attachment inside `attributedTitle`, which makes the gap typographic and ours to set. Measured 1.0-5.0pt across every digit count in both appearances, smallest 1.0pt, never touching.
+- **The panel sizes to its page again.** A fixed height made every short provider page as long as the longest page in the set. An animated resize was investigated rather than assumed: `NSPopover.animates` governs the size transition as well as the open, but the height comes from the hosting controller's `preferredContentSize`, which NSPopover does not animate - measured `from=658 immediate=480 settled=480 transition=instant`. Turning `animates` on after the open would therefore buy no resize animation while restoring an animated close, so it stays off and the resize is instant.
+- **One type scale.** Sizes now go through `Typography`, written as their design size and passed through a single factor with a floor for the fine print. The whole interface got about a tenth smaller.
+
+The within-page layout-stability work is unchanged: tabular figures and reserved columns both stand, and the tests that guard them still pass.
+
+## Previous round
+
 Six changes from the captain after running the built app.
 
 - **Nothing moves when a number changes.** He diagnosed it exactly: a `1` is narrower than a `4` in a proportional font, so Claude and Codex laid out differently. Tabular figures are now the rule for every changing number - the popover root, the Preferences root, and the status item button, which AppKit draws and neither SwiftUI root reached. Only four call sites had them before; the freshness ages, the hidden-provider count, the credits line, the provider-state labels and the whole menu bar title did not. Digit *count* is handled separately by reserved columns and a fixed panel height, because tabular figures do not make `9%` as wide as `100%`. The self-test reports the panel size for every page: `overview=430x682 claude=430x682 codex=430x682 agy=430x682 ... stable=true`.

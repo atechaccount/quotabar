@@ -23,10 +23,23 @@ enum SelfTest {
         dumpStatusItem(model: model, statusItem: statusItem)
         print("SELFTEST popover \(await statusItem.popoverReport())")
 
+        print("SELFTEST resize \(await statusItem.resizeAnimationReport())")
+
+        // The panel now sizes to its page on purpose, so differing heights here
+        // are correct. What must not vary is the same page measured twice, and
+        // the width, which is fixed for every page.
         let sizes = await statusItem.pageSizeReport()
-        let distinct = Set(sizes.map { $0.split(separator: "=").last.map(String.init) ?? "" })
+        var byPage: [String: Set<String>] = [:]
+        for entry in sizes {
+            let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            byPage[parts[0], default: []].insert(parts[1])
+        }
+        let unstable = byPage.filter { $0.value.count > 1 }.keys.sorted()
+        let widths = Set(sizes.compactMap { $0.split(separator: "=").last?.split(separator: "x").first })
         print("SELFTEST panelsize \(sizes.joined(separator: " ")) "
-            + "distinctSizes=\(distinct.count) stable=\(distinct.count <= 1)")
+            + "oneWidth=\(widths.count == 1) "
+            + "pagesThatChangedSize=\(unstable.isEmpty ? "none" : unstable.joined(separator: ","))")
         await dumpStickyFocus(model: model, statusItem: statusItem)
         await observeSchedule(model: model)
 
@@ -137,14 +150,16 @@ enum SelfTest {
         }
 
         let expectedTitle = model.menuBarReadout.percentRemaining
-            .map { " " + StatusItemController.reservedPercent($0) } ?? ""
-        print("SELFTEST statusitem buttonTitle=\"\(button.title)\" "
+            .map { StatusItemController.reservedPercent($0) } ?? ""
+        let drawnTitle = button.attributedTitle.string
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+        print("SELFTEST statusitem buttonTitle=\"\(drawnTitle)\" "
             + "expected=\"\(expectedTitle)\" "
-            + "match=\(button.title == expectedTitle) "
+            + "match=\(drawnTitle == expectedTitle) "
             + "imagePosition=\(button.imagePosition.rawValue) "
             + "appearance=\(StatusItemController.isDark(button.effectiveAppearance) ? "dark" : "light")")
 
-        if let image = button.image {
+        if let image = StatusItemController.markImage(in: button.attributedTitle) {
             let ink = inkCoverage(of: image)
             print(String(
                 format: "SELFTEST statusitem imageInk coverage=%.1f%% avg=(%.2f,%.2f,%.2f) drawn=%@",
@@ -155,6 +170,7 @@ enum SelfTest {
         }
 
         print("SELFTEST statusitem buttonInk \(buttonInkReport(button))")
+        dumpMenuBarGapSweep(button: button, provider: model.menuBarReadout.provider)
 
     }
 
@@ -163,6 +179,23 @@ enum SelfTest {
     /// the difference between "the model wanted a mark" and "the menu bar drew
     /// one", which is precisely what the earlier offscreen check could not.
     private static func buttonInkReport(_ button: NSStatusBarButton) -> String {
+        // The gap is only measurable when there is a number to measure against.
+        // If the focused provider has none right now, borrow a representative
+        // one for the measurement and hand the real title straight back.
+        let realTitle = button.attributedTitle
+        let simulated = realTitle.string.replacingOccurrences(of: "\u{FFFC}", with: "").isEmpty
+        if simulated, let mark = StatusItemController.markImage(in: realTitle) {
+            button.attributedTitle = StatusItemController.statusTitle(
+                mark: mark, percent: StatusItemController.reservedPercent(42))
+            button.layoutSubtreeIfNeeded()
+        }
+        defer {
+            if simulated {
+                button.attributedTitle = realTitle
+                button.layoutSubtreeIfNeeded()
+            }
+        }
+
         let bounds = button.bounds
         guard bounds.width > 1, bounds.height > 1,
               let bitmap = button.bitmapImageRepForCachingDisplay(in: bounds)
@@ -184,10 +217,99 @@ enum SelfTest {
             }
         }
 
+        // The widest run of empty columns between the first and last ink is the
+        // gap between the mark and its number, which is the thing that read as
+        // too wide. Reported in points so it can be compared against a target.
+        var inkColumns: [Bool] = []
+        for x in 0..<bitmap.pixelsWide {
+            var any = false
+            for y in 0..<bitmap.pixelsHigh
+            where (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+                any = true
+                break
+            }
+            inkColumns.append(any)
+        }
+        let firstInk = inkColumns.firstIndex(of: true) ?? 0
+        let lastInk = inkColumns.lastIndex(of: true) ?? 0
+        var widestGap = 0
+        var run = 0
+        for x in firstInk...max(firstInk, lastInk) {
+            run = inkColumns[x] ? 0 : run + 1
+            widestGap = max(widestGap, run)
+        }
+        let scale = bounds.width > 0 ? CGFloat(bitmap.pixelsWide) / bounds.width : 2
+
         return String(
-            format: "frame=%.0fx%.0f px=%dx%d markRegionPx=%d markInk=%d totalInk=%d drawn=%@",
+            format: "frame=%.0fx%.0f px=%dx%d markRegionPx=%d markInk=%d totalInk=%d "
+                + "markToNumberGap=%.1fpt title=%@ drawn=%@",
             bounds.width, bounds.height, bitmap.pixelsWide, bitmap.pixelsHigh,
-            markWidth, markInk, totalInk, markInk > 0 ? "yes" : "NO-MARK-INK")
+            markWidth, markInk, totalInk,
+            CGFloat(widestGap) / scale,
+            simulated ? "simulated" : "live",
+            markInk > 0 ? "yes" : "NO-MARK-INK")
+    }
+
+    /// The gap between the mark and its number, measured at every digit count
+    /// and in both appearances. It has to be tiny, and it has to never reach
+    /// zero - a zero here means the glyphs have run into each other.
+    private static func dumpMenuBarGapSweep(button: NSStatusBarButton, provider: String?) {
+        let original = button.attributedTitle
+        defer {
+            button.attributedTitle = original
+            button.layoutSubtreeIfNeeded()
+        }
+
+        var measurements: [String] = []
+        var smallest = CGFloat.greatestFiniteMagnitude
+        for dark in [false, true] {
+            let mark = ProviderMarkImage.menuBarImage(provider: provider, dark: dark)
+            for value in [7.0, 44, 100] {
+                button.attributedTitle = StatusItemController.statusTitle(
+                    mark: mark, percent: StatusItemController.reservedPercent(value))
+                button.layoutSubtreeIfNeeded()
+                let gap = measuredGap(of: button)
+                smallest = min(smallest, gap ?? smallest)
+                measurements.append(String(
+                    format: "%@/%.0f%%=%@", dark ? "dark" : "light", value,
+                    gap.map { String(format: "%.1f", $0) } ?? "?"))
+            }
+        }
+
+        print("SELFTEST menubargap \(measurements.joined(separator: " ")) "
+            + String(format: "smallest=%.1fpt touching=%@",
+                     smallest, smallest <= 0 ? "YES" : "no"))
+    }
+
+    /// The widest run of empty columns between the first and last ink in the
+    /// button - which, with a mark then a number, is the gap between them.
+    private static func measuredGap(of button: NSStatusBarButton) -> CGFloat? {
+        let bounds = button.bounds
+        guard bounds.width > 1,
+              let bitmap = button.bitmapImageRepForCachingDisplay(in: bounds)
+        else { return nil }
+        button.cacheDisplay(in: bounds, to: bitmap)
+
+        var ink: [Bool] = []
+        for x in 0..<bitmap.pixelsWide {
+            var any = false
+            for y in 0..<bitmap.pixelsHigh
+            where (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+                any = true
+                break
+            }
+            ink.append(any)
+        }
+        guard let first = ink.firstIndex(of: true), let last = ink.lastIndex(of: true)
+        else { return nil }
+
+        var widest = 0
+        var run = 0
+        for x in first...last {
+            run = ink[x] ? 0 : run + 1
+            widest = max(widest, run)
+        }
+        return CGFloat(widest) / (CGFloat(bitmap.pixelsWide) / bounds.width)
     }
 
     /// The sticky selection, exercised the way the captain described it: pick a
