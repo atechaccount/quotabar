@@ -20,7 +20,26 @@ enum RenderCheck {
         return formatter.string(from: Date().addingTimeInterval(hours * 3_600))
     }
 
-    private static var sample: String { """
+    /// Antigravity's two windows, and the same provider reporting only one.
+    /// The short page is its own case worth looking at: a single window is the
+    /// shortest signed-in page the app draws, and it is where the panel's
+    /// minimum height and the top alignment of a page with slack under it show
+    /// up. The captain reported Antigravity with one window.
+    private static let agyWindowsBoth = """
+    {"id":"gemini_weekly","label":"Gemini weekly","kind":"weekly","percentRemaining":1,
+     "resetsAt":"\(iso(124))"},
+    {"id":"claude_gpt_weekly","label":"Claude/GPT weekly","kind":"weekly",
+     "percentRemaining":100,"resetsAt":"\(iso(167))"}
+    """
+
+    private static let agyWindowsSingle = """
+    {"id":"gemini_weekly","label":"Gemini weekly","kind":"weekly","percentRemaining":1,
+     "resetsAt":"\(iso(124))"}
+    """
+
+    private static var sample: String { sample(agyWindows: agyWindowsBoth) }
+
+    private static func sample(agyWindows: String) -> String { """
     {"generatedAt":"2026-09-20T15:24:02.920Z","providers":[
       {"provider":"claude","label":"Claude","source":"oauth","plan":"pro",
        "account":{"email":"service.5k7fv@simplelogin.com"},
@@ -40,11 +59,7 @@ enum RenderCheck {
          {"id":"weekly","label":"week","kind":"weekly","percentRemaining":88,
           "windowSeconds":604800,"resetsAt":"\(iso(161))"}]},
       {"provider":"agy","label":"Antigravity","source":"cli","state":{"status":"fresh"},
-       "windows":[
-         {"id":"gemini_weekly","label":"Gemini weekly","kind":"weekly","percentRemaining":1,
-          "resetsAt":"\(iso(124))"},
-         {"id":"claude_gpt_weekly","label":"Claude/GPT weekly","kind":"weekly",
-          "percentRemaining":100,"resetsAt":"\(iso(167))"}]},
+       "windows":[\(agyWindows)]},
       {"provider":"cursor","label":"Cursor","source":"unavailable",
        "state":{"status":"auth_required","error":"Cursor sign-in required",
                 "sourcesTried":["state-vscdb","cli-keychain"]},
@@ -72,7 +87,9 @@ enum RenderCheck {
         let root = URL(fileURLWithPath: directory, isDirectory: true)
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        guard let snapshot = try? QuotaParser.decode(sample) else {
+        guard let snapshot = try? QuotaParser.decode(sample),
+              let shortSnapshot = try? QuotaParser.decode(sample(agyWindows: agyWindowsSingle))
+        else {
             print("RENDER sample snapshot failed to decode")
             return
         }
@@ -85,6 +102,15 @@ enum RenderCheck {
 
             write(page("codex", snapshot: snapshot, focus: "codex", dark: dark),
                   to: root.appendingPathComponent("provider-signed-in\(suffix).png"))
+
+            // Antigravity with two windows and with one, so the tall and the
+            // short signed-in page can be held side by side. The short one is
+            // where the panel's minimum height shows.
+            write(page("agy", snapshot: snapshot, focus: "agy", dark: dark),
+                  to: root.appendingPathComponent("provider-two-windows\(suffix).png"))
+
+            write(page("agy", snapshot: shortSnapshot, focus: "agy", dark: dark),
+                  to: root.appendingPathComponent("provider-single-window\(suffix).png"))
 
             write(page("cursor", snapshot: snapshot, focus: "cursor", dark: dark, show: ["cursor"]),
                   to: root.appendingPathComponent("provider-unavailable\(suffix).png"))

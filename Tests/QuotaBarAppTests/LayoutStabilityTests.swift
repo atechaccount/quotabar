@@ -282,4 +282,116 @@ struct LayoutStabilityTests {
         #expect(meterOrigin("claude").size == meterOrigin("codex").size,
                 "the Claude and Codex pages are different sizes")
     }
+
+    /// The short-page floor. A provider reporting one window, and one reporting
+    /// none at all, must land on the same panel height as the two-window page
+    /// that is the ordinary shape - otherwise switching to Antigravity snaps the
+    /// panel shorter for no reason the eye can name.
+    ///
+    /// This is not the fixed height coming back. Pages above the floor still
+    /// size to themselves; the floor only stops a page collapsing below the
+    /// common one.
+    @Test
+    func aShortProviderPageIsNoShorterThanTheOrdinaryTwoWindowPage() throws {
+        let snapshot = try QuotaParser.decode("""
+        {"providers":[
+          {"provider":"claude","label":"Claude","plan":"pro","account":{"email":"a@b.c"},
+           "source":"oauth","state":{"status":"fresh"},
+           "windows":[{"id":"five_hour","label":"session","kind":"session",
+                       "percentRemaining":77,"resetsAt":"2027-01-15T12:00:00.000Z"},
+                      {"id":"seven_day","label":"week","kind":"weekly",
+                       "percentRemaining":44,"resetsAt":"2027-01-18T12:00:00.000Z"}]},
+          {"provider":"agy","label":"Antigravity","source":"cli",
+           "state":{"status":"fresh"},
+           "windows":[{"id":"gemini_weekly","label":"Gemini weekly","kind":"weekly",
+                       "percentRemaining":1,"resetsAt":"2027-01-18T12:00:00.000Z"}]},
+          {"provider":"openrouter","label":"OpenRouter","source":"api",
+           "state":{"status":"fresh"},"windows":[]}]}
+        """)
+        let preferences = AppPreferences(defaults: InMemoryPreferenceStore())
+        preferences.seedVisibilityIfNeeded(from: snapshot)
+        for provider in ["claude", "agy", "openrouter"] {
+            preferences.setVisible(true, provider: provider)
+        }
+        let model = AppModel(
+            startRefreshing: false, preferences: preferences,
+            snapshot: snapshot, lastSuccessAt: now)
+
+        func height(_ provider: String) -> CGFloat {
+            model.select(.provider(provider))
+            let host = NSHostingController(rootView: QuotaMenuView(model: model))
+            host.sizingOptions = [.preferredContentSize]
+            host.view.layoutSubtreeIfNeeded()
+            return host.view.fittingSize.height
+        }
+
+        let twoWindows = height("claude")
+        #expect(height("agy") == twoWindows, "the one-window page is a different height")
+        #expect(height("openrouter") == twoWindows, "the no-window page is a different height")
+    }
+
+    /// The floor must not turn into a ceiling that squeezes a long page. A page
+    /// taller than `maxContentHeight` scrolls: the panel stops growing, and the
+    /// page itself is still taller than the box it is shown in.
+    ///
+    /// The two variants of the same view are what make that measurable. The
+    /// non-scrolling one is the page at its full height - it is what the render
+    /// hook draws - and the scrolling one is what ships. If the scrolling panel
+    /// has stopped at the cap while the non-scrolling page is taller, the
+    /// content is being scrolled rather than compressed into the visible box.
+    @Test
+    func aLongPageStillScrollsRatherThanBeingSqueezed() throws {
+        let windows = (0..<12).map { index in
+            """
+            {"id":"w\(index)","label":"Window \(index)","kind":"weekly",
+             "percentRemaining":\(index * 8),"resetsAt":"2027-01-18T12:00:00.000Z"}
+            """
+        }
+        let snapshot = try QuotaParser.decode("""
+        {"providers":[
+          {"provider":"claude","label":"Claude","plan":"pro","account":{"email":"a@b.c"},
+           "source":"oauth","state":{"status":"fresh"},
+           "windows":[\(windows.joined(separator: ","))]}]}
+        """)
+        let preferences = AppPreferences(defaults: InMemoryPreferenceStore())
+        preferences.seedVisibilityIfNeeded(from: snapshot)
+        let model = AppModel(
+            startRefreshing: false, preferences: preferences,
+            snapshot: snapshot, lastSuccessAt: now)
+        model.select(.provider("claude"))
+
+        func height(scrolls: Bool) -> CGFloat {
+            let host = NSHostingController(rootView: QuotaMenuView(model: model, scrolls: scrolls))
+            host.sizingOptions = [.preferredContentSize]
+            host.view.layoutSubtreeIfNeeded()
+            return host.view.fittingSize.height
+        }
+
+        let capped = height(scrolls: true)
+        let full = height(scrolls: false)
+        #expect(full > capped, "a 12-window page did not exceed the cap: \(full) against \(capped)")
+
+        // A page resting on the floor gives the chrome above and below the page
+        // area, which is what turns the cap into a panel height to compare with.
+        let short = try QuotaParser.decode("""
+        {"providers":[
+          {"provider":"claude","label":"Claude","plan":"pro","account":{"email":"a@b.c"},
+           "source":"oauth","state":{"status":"fresh"},
+           "windows":[{"id":"w0","label":"Window 0","kind":"weekly","percentRemaining":8,
+                       "resetsAt":"2027-01-18T12:00:00.000Z"}]}]}
+        """)
+        let shortPreferences = AppPreferences(defaults: InMemoryPreferenceStore())
+        shortPreferences.seedVisibilityIfNeeded(from: short)
+        let shortModel = AppModel(
+            startRefreshing: false, preferences: shortPreferences,
+            snapshot: short, lastSuccessAt: now)
+        shortModel.select(.provider("claude"))
+        let shortHost = NSHostingController(rootView: QuotaMenuView(model: shortModel))
+        shortHost.sizingOptions = [.preferredContentSize]
+        shortHost.view.layoutSubtreeIfNeeded()
+        let chrome = shortHost.view.fittingSize.height - Layout.minContentHeight
+
+        #expect(capped == chrome + Layout.maxContentHeight,
+                "the page area did not stop at its cap: \(capped) against \(chrome + Layout.maxContentHeight)")
+    }
 }

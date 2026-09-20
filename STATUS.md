@@ -17,6 +17,13 @@
 
 ## Recent round
 
+Two polish items after the captain ran the three-change build. Neither was a defect.
+
+- **A short provider page no longer snaps the panel shorter.** The page area gained a floor, `Layout.minContentHeight`, measured at 256pt: the page area of the ordinary two-window provider page, a session and a week. Every signed-in provider page now settles at 468pt whether the provider reports two windows, one, or none, so switching between Claude and Antigravity resizes nothing. Pages that genuinely need more are untouched - Overview measured 696pt and the unavailable pages 631-731pt - so nothing is padded to the longest page. The alignment on the short page was the second half of it: each page now ends in a footer pushed down by a `Spacer`, so the space a missing window would have taken opens above the boundary note rather than leaving a hole beneath it, and the note lands on the same line on every provider page. `QUOTABAR_RENDER` draws Antigravity twice, with two windows and with one, for holding side by side.
+- **The type came down again, to 0.85 against a 9.0pt floor.** Every step is smaller than it was at 0.9: 19 base draws at 16.0, 16 at 13.5, 14 at 12.0, 13 at 11.0, 12 at 10.0, 11 at 9.5, and the three smallest bases in use - 9.5, 10 and 10.5 - collapse onto the floor, which is exactly the group that collapsed before. The floor moved because it had to: base 11 is the secondary body size on the plan line, the account identity, the freshness sentence, the credits line and every reset time, and at 0.85 it computes to 9.35, so the old 9.5 floor would have clamped it into the fine print. 0.85 with a 9.0pt floor is the furthest this pair goes - anything smaller needs a floor under 9.0, which is too small to read in a menu bar panel.
+
+## Previous round
+
 Three changes after the captain ran the build, plus a sharpening of the first.
 
 - **The menu bar mark sits right next to its number.** The gap was 15pt and none of `imagePosition` or `imageHugsTitle` moved it - all four combinations measured at exactly 15.0pt, because that spacing is AppKit's own when a button carries `image` plus `title`. The mark now travels as a text attachment inside `attributedTitle`, which makes the gap typographic and ours to set. Measured 1.0-5.0pt across every digit count in both appearances, smallest 1.0pt, never touching.
@@ -25,7 +32,7 @@ Three changes after the captain ran the build, plus a sharpening of the first.
 
 The within-page layout-stability work is unchanged: tabular figures and reserved columns both stand, and the tests that guard them still pass.
 
-## Previous round
+## Round before that
 
 Six changes from the captain after running the built app.
 

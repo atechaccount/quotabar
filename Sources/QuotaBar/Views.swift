@@ -21,6 +21,19 @@ enum Layout {
     /// holds - tabular figures and reserved columns, both unchanged.
     static let maxContentHeight: CGFloat = 520
 
+    /// And a floor under it, so a provider with one window does not snap the
+    /// panel shorter than the provider beside it. 256pt is measured, not
+    /// chosen: it is the page area of the ordinary two-window provider page -
+    /// a session and a week, which is Claude, Codex and Antigravity - so that
+    /// page is untouched and the shorter ones rise to meet it. The panel is
+    /// 468pt at the floor; `QUOTABAR_SELFTEST` prints it for every page.
+    ///
+    /// This is not the fixed height coming back. Nothing is padded to the
+    /// longest page: Overview and the unavailable pages are still taller and
+    /// still size to themselves. The floor only stops a page collapsing below
+    /// the common one.
+    static let minContentHeight: CGFloat = 256
+
     /// Right-hand number columns. Fixed widths are what make the numbers line up
     /// with each other rather than with whatever label happens to precede them,
     /// and they are what stops a 9%, a 91% and a 100% laying out differently.
@@ -47,11 +60,21 @@ enum Layout {
 ///
 /// Sizes are written as the base size they were designed at and passed through
 /// a single factor, so the interface gets smaller or larger as one system
-/// rather than label by label. The floor keeps the fine print readable: below
-/// it the three smallest steps collapse together, which is intended.
+/// rather than label by label. The floor keeps the fine print readable: the
+/// three smallest bases in use - 9.5, 10 and 10.5 - land on it and collapse
+/// together, which is intended.
+///
+/// 0.85 against a 9.0 floor is as far down as this pair goes while the
+/// hierarchy survives. Base 11 is the secondary body size, on the plan line,
+/// the account identity, the freshness sentence, the credits line and every
+/// reset time; at 0.85 it computes to 9.35 and the old 9.5 floor would have
+/// clamped it into the fine print with the three sizes below it. Dropping the
+/// floor to 9.0 - AppKit's own mini control size - lets 11 through at 9.5 and
+/// keeps the collapsed group exactly the same three bases it was before. Any
+/// scale below 0.85 needs a floor under 9.0, which is too small to read here.
 enum Typography {
-    static let scale: CGFloat = 0.9
-    static let minimumSize: CGFloat = 9.5
+    static let scale: CGFloat = 0.85
+    static let minimumSize: CGFloat = 9.0
 
     static func size(_ base: CGFloat) -> CGFloat {
         max(minimumSize, (base * scale * 2).rounded() / 2)
@@ -81,11 +104,16 @@ struct QuotaMenuView: View {
             TabStrip(model: model, scrolls: scrolls, tintOpacity: tabStripTintOpacity)
             Divider()
 
+            // `maxHeight: .infinity` inside the minimum is what lets a short
+            // page spend the slack itself: each page ends in a footer pushed
+            // down by a `Spacer`, so the space a missing window would have
+            // taken opens above that footer instead of below it.
             let body = page(now: now)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, Layout.contentPadding)
                 .padding(.top, Layout.contentPadding)
                 .padding(.bottom, 12)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(minHeight: Layout.minContentHeight)
 
             if scrolls {
                 ScrollView {
@@ -293,6 +321,7 @@ struct OverviewPage: View {
                 }
             }
 
+            Spacer(minLength: 0)
             hiddenProvidersRow
         }
     }
@@ -531,6 +560,10 @@ struct SignedInProviderPage: View {
                 .padding(.top, 14)
             }
 
+            // The footer, pushed to the bottom of the page area. On a page that
+            // fills its space this is nothing; on a short one it puts the slack
+            // where a missing window would have been.
+            Spacer(minLength: 0)
             boundaryNote
         }
     }
@@ -662,6 +695,7 @@ struct UnavailableProviderPage: View {
             empty
             visibilityNote
             diagnostics
+            Spacer(minLength: 0)
             Text("QuotaBar only displays quota-axi output. It does not open provider login "
                 + "flows or read credentials itself.")
                 .font(Typography.font(10))

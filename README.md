@@ -80,7 +80,7 @@ The popover is a tab strip over one page at a time, not a single flat column.
 - **A signed-in provider page** shows that provider's account, plan, source and freshness, then one section per window quota-axi actually reported, with the percentage and the reset time each on their own right edge.
 - **An unavailable provider page** is hidden until the provider is turned on by hand. It states the real status, lists every source quota-axi tried and what came back, and says what QuotaBar will and will not do about it. It never renders a missing quota as zero.
 
-Type is one scale: sizes are written as the base size they were designed at and passed through a single factor in `Typography`, with a floor that keeps the fine print readable. Changing the whole interface's size is one constant.
+Type is one scale: sizes are written as the base size they were designed at and passed through a single factor in `Typography`, with a floor that keeps the fine print readable. Changing the whole interface's size is one constant. The pair is 0.85 against a 9.0pt floor, which is as far down as it goes while the hierarchy survives: base 11 is the secondary body size - the plan line, the account identity, the freshness sentence, the credits line, every reset time - and at 0.85 it computes to 9.35, so a floor above 9.0 would clamp it into the fine print along with the three sizes below it.
 
 On a provider page the window's remaining percentage sits directly above its reset time, so the eye reads one right-hand column instead of two. Labels sit on the left; comparable numbers and reset times sit on clean right edges throughout. The provider pages carry no mark beside the provider name - the tab above already says which provider the page is.
 
@@ -95,6 +95,8 @@ Two separate causes, both fixed structurally rather than case by case.
 **Digit count.** Tabular figures do not help when `9%` becomes `100%`. Every changing number also sits in a reserved, right-aligned column whose width is a constant in `Layout`.
 
 This is about content moving *within* a page. The panel itself sizes to its page, so pages of different shapes have different heights - a short provider page is not padded out to the length of the Overview. What must not vary is the same page measured twice, and the width, which is fixed for every page.
+
+The page area has a floor as well as a cap. `Layout.minContentHeight` is 256pt, measured as the page area of the ordinary two-window provider page - a session and a week, which is what Claude, Codex and Antigravity report - so a provider with one window or none rises to meet that page instead of snapping the panel shorter than the tab beside it. Every signed-in provider page therefore settles at 468pt, and only the pages that genuinely need more, Overview and the unavailable pages, are taller. Each page ends in a footer pushed down by a `Spacer`, so the space a missing window would have taken opens above the footer rather than leaving a hole under it, and the boundary note lands on the same line whatever the provider reports.
 
 `LayoutStabilityTests` covers both halves, and `QUOTABAR_SELFTEST` reports the panel size for every page in the running app.
 
@@ -152,7 +154,7 @@ QUOTABAR_RENDER=.artifacts/render ./dist/QuotaBar.app/Contents/MacOS/QuotaBar  #
 
 `QUOTABAR_VERIFY` opens the real preferences window three times, including once after closing it, and reports whether it was visible, key and frontmost each time. It substitutes a stub for the login-item status so opening the window cannot trigger a system prompt, and says so in its output. Note that this hook runs at launch with no user interaction, and macOS 14 can refuse activation in that situation, so it may report `appActive=false`; the window is ordered front regardless and still appears.
 
-`QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen. It also writes `menubar-backing.png`, a swatch of the menu bar mark at four backing strengths over a light menu bar, a dark one, and a bright and a busy wallpaper, for choosing that value by eye. Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
+`QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen. It draws Antigravity twice, as `provider-two-windows` and `provider-single-window`, because the short page is where the floor and the footer show and the two are meant to be held side by side. It also writes `menubar-backing.png`, a swatch of the menu bar mark at four backing strengths over a light menu bar, a dark one, and a bright and a busy wallpaper, for choosing that value by eye. Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
 
 All three quit the app when they finish.
 
