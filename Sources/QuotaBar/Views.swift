@@ -15,6 +15,7 @@ struct MenuBarLabel: View {
             }
         }
         .accessibilityLabel(accessibilityLabel)
+        .onAppear { model.statusItemAppeared() }
     }
 
     private var accessibilityLabel: String {

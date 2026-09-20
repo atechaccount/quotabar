@@ -107,6 +107,10 @@ final class AppModel: ObservableObject {
         Task { await request(.menuOpened) }
     }
 
+    func statusItemAppeared() {
+        print("QuotaBar menu bar status item state=active activationPolicy=\(NSApp.activationPolicy().rawValue)")
+    }
+
     private func request(_ reason: RefreshReason) async {
         await coordinator.request(reason: reason, readOnly: preferences.readOnlyRefresh)
     }
