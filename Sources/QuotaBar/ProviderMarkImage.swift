@@ -27,18 +27,25 @@ enum ProviderMarkImage {
     private static var cache: [CacheKey: NSImage] = [:]
 
     /// Marks are square. The menu bar image is larger than the mark itself
-    /// because it carries a backing plate behind it; the mark inside stays the
-    /// size it has always been, because shrinking it would undo the legibility
-    /// the plate is there to buy.
-    static let menuBarSide: CGFloat = 20
-
-    /// How far the mark is inset inside its backing plate.
-    static let backingInset: CGFloat = 2
+    /// because it carries a backing plate behind it. The size comes from
+    /// `MenuBarMetrics`, which scales it in step with the number beside it.
+    static let menuBarSide = MenuBarMetrics.side
 
     /// The whole gap between the mark and the number beside it in the menu bar.
     /// Small enough to read as one item, large enough that the glyphs never
     /// touch at any percentage width.
-    static let menuBarGap: CGFloat = 1.5
+    static let menuBarGap = MenuBarMetrics.gap
+
+    /// How far a mark is inset inside its backing plate, for a plate of `side`.
+    /// Proportional, so the plate keeps the same visual margin at every size it
+    /// is drawn at - the menu bar's and the dropdown's alike.
+    static func backingInset(side: CGFloat) -> CGFloat {
+        side * MenuBarMetrics.backingInsetFraction
+    }
+
+    /// The inset of the menu bar plate specifically, which is the one the status
+    /// item title has to know about to work out its kern.
+    static let menuBarBackingInset = MenuBarMetrics.side * MenuBarMetrics.backingInsetFraction
 
     /// The corner radius of a plate, as a fraction of its shorter side. Shared
     /// with the plate the status item draws behind mark and number together, so
@@ -176,7 +183,8 @@ enum ProviderMarkImage {
     {
         let size = NSSize(width: side, height: side)
         let inset = insetMark || backing != nil
-        let markSide = inset ? side - backingInset * 2 : side
+        let markInset = backingInset(side: side)
+        let markSide = inset ? side - markInset * 2 : side
 
         guard let provider,
               let url = markURL(for: provider),
@@ -193,7 +201,7 @@ enum ProviderMarkImage {
         let composed = NSImage(size: size, flipped: false) { rect in
             drawBacking(in: rect, backing: backing)
 
-            let markRect = inset ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
+            let markRect = inset ? rect.insetBy(dx: markInset, dy: markInset) : rect
             // The mark is drawn into its own layer so the `.sourceAtop` recolor
             // cannot bleed onto the backing plate underneath it.
             NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -232,6 +240,7 @@ enum ProviderMarkImage {
     {
         let size = NSSize(width: side, height: side)
         let inset = insetMark || backing != nil
+        let markInset = backingInset(side: side)
         let ink = dark
             ? NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)
             : NSColor(srgbRed: 0.12, green: 0.12, blue: 0.13, alpha: 1)
@@ -239,7 +248,7 @@ enum ProviderMarkImage {
         let image = NSImage(size: size, flipped: false) { rect in
             drawBacking(in: rect, backing: backing)
 
-            let box = inset ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
+            let box = inset ? rect.insetBy(dx: markInset, dy: markInset) : rect
             let width = max(2, box.width / 5)
             let gap = (box.width - width * 3) / 2
             let heights = [box.height * 0.45, box.height * 0.72, box.height]

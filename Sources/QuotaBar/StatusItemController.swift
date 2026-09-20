@@ -35,9 +35,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             imageSize: .zero, usedVendorMark: false)
     }
 
-    /// The default face. Every choice is derived from it, so every readout keeps
-    /// the tabular figures the menu bar needs - AppKit draws this title and the
-    /// popover's own `.monospacedDigit()` never reaches it.
+    /// The default face, at the size `MenuBarMetrics` sets. Every choice is
+    /// derived from it, so every readout keeps the tabular figures the menu bar
+    /// needs - AppKit draws this title and the popover's own `.monospacedDigit()`
+    /// never reaches it.
     static let titleFont = font(for: .system)
 
     /// The captain's chosen face, still with tabular figures. The design is
@@ -46,7 +47,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// otherwise drop it and let a 1 come out narrower than a 4.
     static func font(for choice: MenuBarFontChoice) -> NSFont {
         let base = NSFont.monospacedDigitSystemFont(
-            ofSize: NSFont.systemFontSize, weight: .regular)
+            ofSize: MenuBarMetrics.titleSize, weight: MenuBarMetrics.titleWeight)
         let tabular: [[NSFontDescriptor.FeatureKey: Int]] = [[
             .typeIdentifier: kNumberSpacingType,
             .selectorIdentifier: kMonospacedNumbersSelector,
@@ -57,7 +58,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             descriptor = designed
         }
         descriptor = descriptor.addingAttributes([.featureSettings: tabular])
-        return NSFont(descriptor: descriptor, size: NSFont.systemFontSize) ?? base
+        return NSFont(descriptor: descriptor, size: MenuBarMetrics.titleSize) ?? base
     }
 
     /// The plate that covers the mark and the number together, or `nil` for
@@ -99,10 +100,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let title = NSMutableAttributedString(attachment: attachment)
         guard !percent.isEmpty else { return title }
 
-        // The mark image carries `backingInset` of transparent padding on its
+        // The mark image carries its backing inset of transparent padding on its
         // trailing edge, which is part of what the eye reads as the gap, so the
-        // kern only has to make up the difference.
-        let kern = ProviderMarkImage.menuBarGap - ProviderMarkImage.backingInset
+        // kern only has to make up the difference. That inset scales with the
+        // mark, so the kern is derived from it rather than written down: the
+        // whole gap works out to `menuBarGap` at any size.
+        let kern = ProviderMarkImage.menuBarGap - ProviderMarkImage.menuBarBackingInset
         title.addAttribute(
             .kern, value: kern, range: NSRange(location: title.length - 1, length: 1))
         let numberStart = title.length

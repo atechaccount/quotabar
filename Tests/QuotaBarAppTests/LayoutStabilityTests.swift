@@ -95,6 +95,50 @@ struct LayoutStabilityTests {
         #expect(gap < 4, "the gap is back to being wide")
     }
 
+    /// The captain asked for a smaller menu bar item, and for the mark and the
+    /// number to stay balanced against each other while it shrank. One factor
+    /// drives both, so the guard is that neither can be moved on its own and
+    /// that the pair really did come down.
+    @Test
+    func theMenuBarMarkAndItsNumberShrinkTogether() {
+        #expect(MenuBarMetrics.scale < 1, "the item is back at its original size")
+        #expect(MenuBarMetrics.scale > 0.6, "this is smaller than the menu bar can carry")
+
+        // The design ratio: a 20pt mark against the 13pt system font. Whatever
+        // the factor is, the pair holds that proportion to within the half point
+        // both sizes are rounded to.
+        let designRatio = 20 / NSFont.systemFontSize
+        let ratio = MenuBarMetrics.side / MenuBarMetrics.titleSize
+        #expect(
+            abs(ratio - designRatio) < 0.1,
+            "the mark and the number are out of proportion: \(ratio) against \(designRatio)")
+
+        #expect(MenuBarMetrics.side < 20)
+        #expect(MenuBarMetrics.titleSize < NSFont.systemFontSize)
+        #expect(StatusItemController.titleFont.pointSize == MenuBarMetrics.titleSize)
+        #expect(ProviderMarkImage.menuBarSide == MenuBarMetrics.side)
+    }
+
+    /// The gap between the mark and the number is the attachment's own trailing
+    /// padding plus the kern, and that padding shrinks with the mark. The kern is
+    /// derived from it so the whole gap lands on `menuBarGap` at any size - the
+    /// property that keeps the glyphs from running into each other.
+    @Test
+    func theGapSurvivesTheMarkChangingSize() {
+        let inset = ProviderMarkImage.menuBarBackingInset
+        #expect(
+            inset > 0 && inset < ProviderMarkImage.menuBarSide / 2,
+            "the backing plate swallowed its mark: inset \(inset)")
+
+        let kern = ProviderMarkImage.menuBarGap - inset
+        #expect(
+            abs((inset + kern) - ProviderMarkImage.menuBarGap) < 0.001,
+            "the gap no longer works out to menuBarGap")
+        #expect(
+            inset + kern > 0,
+            "a zero gap lets the mark and the number intersect")
+    }
+
     // MARK: - Reserved columns
 
     private func window(_ percent: Int, resets: Bool) throws -> QuotaWindow {

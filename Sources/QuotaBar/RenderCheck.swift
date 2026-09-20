@@ -208,18 +208,24 @@ enum RenderCheck {
                         side: ProviderMarkImage.menuBarSide,
                         backing: opacity > 0 ? (ink, opacity) : nil,
                         insetMark: true)
-                    let side = ProviderMarkImage.menuBarSide
-                    mark.draw(in: NSRect(
-                        x: cell.midX - side / 2 - 14,
-                        y: cell.midY - side / 2,
-                        width: side, height: side))
-
-                    let number: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
-                        .foregroundColor: backdrop.dark ? NSColor.white : NSColor.black,
-                    ]
-                    ("84%" as NSString).draw(
-                        at: NSPoint(x: cell.midX + 6, y: cell.midY - 7), withAttributes: number)
+                    // The real menu bar item, not an approximation of it: the
+                    // same attributed title the status button is handed, so the
+                    // size and the gap in this picture are the shipped ones.
+                    // `labelColor` would resolve against the renderer's own
+                    // appearance rather than the backdrop's, so the ink is set
+                    // explicitly per row.
+                    let item = NSMutableAttributedString(
+                        attributedString: StatusItemController.statusTitle(
+                            mark: mark,
+                            percent: StatusItemController.reservedPercent(84)))
+                    item.addAttribute(
+                        .foregroundColor,
+                        value: backdrop.dark ? NSColor.white : NSColor.black,
+                        range: NSRange(location: 0, length: item.length))
+                    let itemSize = item.size()
+                    item.draw(at: NSPoint(
+                        x: cell.midX - itemSize.width / 2,
+                        y: cell.midY - itemSize.height / 2))
                 }
             }
             return true

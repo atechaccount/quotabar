@@ -19,6 +19,14 @@
 
 ## Recent round
 
+**The menu bar item is smaller.** The mark and its number now come from one place, `MenuBarMetrics`: a design size each - the 20pt mark against the 13pt system font the item was first built at - and a single `scale` factor, shipped at 0.85, so the pair cannot drift out of proportion with each other. The mark is 17pt and the number 11pt, which takes the whole item from 78pt wide to 70pt. The number's weight steps up to medium to pay for the smaller size on a translucent menu bar. The backing plate's inset became a fraction of the side so it scales too, and the kern is derived from it, which keeps the whole mark-to-number gap on `MenuBarMetrics.gap` at any size; the gap itself is not scaled, because it is an optical minimum rather than a dimension.
+
+Shipped as one better default rather than a sixth appearance setting. The five that landed last round are all matters of taste with no better answer; the size was simply too big, and one right size beats a control nobody should have to find.
+
+Evidence after the change. `menubargap` now sweeps all four faces as well as both appearances and every digit count, because a smaller item is where the glyphs would first run into each other: `smallest=0.5pt at=rounded/dark/44% touching=no`, and the same sweep at the old size measures the same 0.5pt floor, so nothing got tighter. The live status button reports `frame=70x22 markInk=171 drawn=yes`, the reserved width holds at `oneWidth=true` from 0% to 100% in every face, and `menubar-backing.png` now draws the real status title rather than an approximation of it, over a light menu bar, a dark one, and a bright and a busy wallpaper.
+
+## Previous round
+
 The menu bar item's appearance is the captain's to set rather than fixed in code. Every default is the presentation the app already had, so an untouched install looks exactly as it did.
 
 - **Five settings, under Preferences > Menu bar appearance.** The icon in brand colour or greyscale; the backing covering nothing, the icon, or the icon and number together; the backing's colour and strength; the number's colour, white, black, matching the menu bar or custom; and the readout's face - system, rounded, monospaced or serif. Each is written under its own key, so one unreadable stored value cannot take the rest of the menu bar with it.
@@ -26,14 +34,14 @@ The menu bar item's appearance is the captain's to set rather than fixed in code
 - **The wide plate is the status button's layer background.** A sublayer draws on top of the title AppKit renders into the layer's contents, and no image can reach behind text the button lays out itself. `QUOTABAR_SELFTEST` now sweeps every option through the real status item: `scope=markAndNumber ... layerAlpha=0.070 layerRadius=5.6`, greyscale drawing `markAvg=(0.47,0.47,0.47)`, and the item's width holding at 77pt across the sweep.
 - **A reserved-width bug the font choice exposed.** `U+2007 FIGURE SPACE` is one digit wide in most faces but not in the serif one, so a 9% item came out narrower than a 100% one. `statusTitle` now measures both in the chosen face and kerns away the difference; the test asserts one width from 0% to 100% in every face.
 
-## Previous round
+## The round before that
 
 Two polish items after the captain ran the three-change build. Neither was a defect.
 
 - **A short provider page no longer snaps the panel shorter.** The page area gained a floor, `Layout.minContentHeight`, measured at 256pt: the page area of the ordinary two-window provider page, a session and a week. Every signed-in provider page now settles at 468pt whether the provider reports two windows, one, or none, so switching between Claude and Antigravity resizes nothing. Pages that genuinely need more are untouched - Overview measured 696pt and the unavailable pages 631-731pt - so nothing is padded to the longest page. The alignment on the short page was the second half of it: each page now ends in a footer pushed down by a `Spacer`, so the space a missing window would have taken opens above the boundary note rather than leaving a hole beneath it, and the note lands on the same line on every provider page. `QUOTABAR_RENDER` draws Antigravity twice, with two windows and with one, for holding side by side.
 - **The type came down again, to 0.85 against a 9.0pt floor.** Every step is smaller than it was at 0.9: 19 base draws at 16.0, 16 at 13.5, 14 at 12.0, 13 at 11.0, 12 at 10.0, 11 at 9.5, and the three smallest bases in use - 9.5, 10 and 10.5 - collapse onto the floor, which is exactly the group that collapsed before. The floor moved because it had to: base 11 is the secondary body size on the plan line, the account identity, the freshness sentence, the credits line and every reset time, and at 0.85 it computes to 9.35, so the old 9.5 floor would have clamped it into the fine print. 0.85 with a 9.0pt floor is the furthest this pair goes - anything smaller needs a floor under 9.0, which is too small to read in a menu bar panel.
 
-## Round before that
+## And the one before that
 
 Three changes after the captain ran the build, plus a sharpening of the first.
 

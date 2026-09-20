@@ -349,26 +349,39 @@ enum SelfTest {
 
         var measurements: [String] = []
         var smallest = CGFloat.greatestFiniteMagnitude
-        for dark in [false, true] {
-            let mark = ProviderMarkImage.menuBarImage(
-                provider: provider, dark: dark, appearance: appearance)
-            for value in [7.0, 44, 100] {
-                button.attributedTitle = StatusItemController.statusTitle(
-                    mark: mark,
-                    percent: StatusItemController.reservedPercent(value),
-                    appearance: appearance)
-                button.layoutSubtreeIfNeeded()
-                let gap = measuredGap(of: button)
-                smallest = min(smallest, gap ?? smallest)
-                measurements.append(String(
-                    format: "%@/%.0f%%=%@", dark ? "dark" : "light", value,
-                    gap.map { String(format: "%.1f", $0) } ?? "?"))
+        var smallestAt = "-"
+        // Every face, not only the chosen one. The gap is small by design and
+        // the item is small, so a face that sets its digits tighter is exactly
+        // where the mark and the number would first run into each other.
+        for face in MenuBarFontChoice.allCases {
+            var variant = appearance
+            variant.font = face
+            for dark in [false, true] {
+                let mark = ProviderMarkImage.menuBarImage(
+                    provider: provider, dark: dark, appearance: variant)
+                for value in [7.0, 44, 100] {
+                    button.attributedTitle = StatusItemController.statusTitle(
+                        mark: mark,
+                        percent: StatusItemController.reservedPercent(value),
+                        appearance: variant)
+                    button.layoutSubtreeIfNeeded()
+                    let gap = measuredGap(of: button)
+                    let label = String(
+                        format: "%@/%@/%.0f%%", face.rawValue, dark ? "dark" : "light", value)
+                    if let gap, gap < smallest {
+                        smallest = gap
+                        smallestAt = label
+                    }
+                    measurements.append(String(
+                        format: "%@=%@", label,
+                        gap.map { String(format: "%.1f", $0) } ?? "?"))
+                }
             }
         }
 
         print("SELFTEST menubargap \(measurements.joined(separator: " ")) "
-            + String(format: "smallest=%.1fpt touching=%@",
-                     smallest, smallest <= 0 ? "YES" : "no"))
+            + String(format: "smallest=%.1fpt at=%@ touching=%@",
+                     smallest, smallestAt, smallest <= 0 ? "YES" : "no"))
     }
 
     /// The widest run of empty columns between the first and last ink in the
