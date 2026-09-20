@@ -97,6 +97,7 @@ open dist/QuotaBar.app --env QUOTABAR_SELFTEST=1 --stdout /tmp/selftest.log # ov
 ```
 
 `QUOTABAR_VERIFY` opens the real preferences window three times, including once after closing it, and reports whether it was visible, key and frontmost each time.
+Note that this hook runs at launch with no user interaction, and macOS 14 can refuse activation in that situation, so it may report `appActive=false`; the window is ordered front regardless and still appears.
 `QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, renders each mark offscreen and compares its pixels against the expected brand color, then watches the refresh schedule tick.
 Both quit the app when they finish.
 

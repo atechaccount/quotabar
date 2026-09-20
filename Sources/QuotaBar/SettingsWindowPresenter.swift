@@ -65,6 +65,9 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
         hooks.activate()
         activationCount += 1
         target.makeKeyAndOrderFront(nil)
+        // macOS may refuse to activate an app that the user did not just interact
+        // with. Ordering front regardless means the window still appears even then.
+        target.orderFrontRegardless()
     }
 
     /// Dropping the closed window is what makes the second and third open work:

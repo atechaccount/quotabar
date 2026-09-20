@@ -34,7 +34,11 @@ final class AppModel: ObservableObject {
             await self?.request(reason)
         })
 
-    init() {
+    /// `startRefreshing: false` builds a model that drives no schedule and runs no
+    /// subprocess. The verification hook uses it so it cannot disturb the real app.
+    init(startRefreshing: Bool = true) {
+        guard startRefreshing else { return }
+
         activity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
             reason: "Keep the quota refresh schedule responsive")

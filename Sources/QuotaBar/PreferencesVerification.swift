@@ -10,7 +10,7 @@ import SwiftUI
 @MainActor
 enum PreferencesVerification {
     static func run() async {
-        let model = AppModel()
+        let model = AppModel(startRefreshing: false)
         let presenter = SettingsWindowPresenter(
             hooks: .live(content: { AnyView(PreferencesView(model: model)) }))
 

@@ -125,8 +125,11 @@ enum SelfTest {
     /// Drops the interval to 30s and watches the clock, so the captain's main
     /// complaint - refreshes that silently stop - is checked in the real app.
     private static func observeSchedule(model: AppModel) async {
+        // Borrow a short interval, then hand the captain's setting back.
+        let original = model.preferences.refreshInterval
+        defer { model.preferences.refreshInterval = original }
         model.preferences.refreshInterval = 30
-        print("SELFTEST schedule interval=30s watching for ticks")
+        print("SELFTEST schedule interval=30s (restoring \(Int(original))s afterwards)")
 
         var seen = 0
         var last = model.lastSuccessAt
