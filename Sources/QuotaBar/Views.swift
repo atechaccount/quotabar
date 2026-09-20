@@ -326,7 +326,7 @@ struct OverviewPage: View {
                     ProgressView().controlSize(.small)
                 }
                 StatusPill(
-                    text: "\(model.overviewProviders.count) connected",
+                    text: "\(model.overviewProviders.count) shown",
                     tone: model.overviewProviders.isEmpty ? .neutral : .good)
             }
         }
@@ -415,18 +415,17 @@ struct OverviewProviderRow: View {
 
                 Spacer(minLength: 8)
 
-                if let headline = provider.headline {
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(QuotaFormatting.percent(headline.percentRemaining))
-                            .font(Typography.font(14, weight: .medium))
-                            .monospacedDigit()
-                        Text("\(headline.windowLabel) left")
-                            .font(Typography.font(10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .frame(width: Layout.headlineColumn, alignment: .trailing)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(provider.headline.map { QuotaFormatting.percent($0.percentRemaining) } ?? "Unknown")
+                        .font(Typography.font(14, weight: .medium))
+                        .monospacedDigit()
+                    Text(provider.headline.map { "\($0.windowLabel) left" }
+                        ?? (provider.usageState == .stale ? "last known - stale" : "usage unknown"))
+                        .font(Typography.font(10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+                .frame(width: Layout.headlineColumn, alignment: .trailing)
             }
 
             // A Grid, so the label column is as wide as this provider's longest
@@ -463,7 +462,7 @@ struct OverviewLane: View {
                 tint: isCritical ? Color(brandHex: "#E36F5C") : accent,
                 height: 6)
 
-            Text(window.percentRemaining.map { QuotaFormatting.percent($0) } ?? "—")
+            Text(window.percentRemaining.map { QuotaFormatting.percent($0) } ?? "Unknown")
                 .font(Typography.font(10, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(isCritical ? Color(brandHex: "#C94D3A") : Color.primary)
@@ -489,6 +488,9 @@ struct Meter: View {
                     RoundedRectangle(cornerRadius: height / 2)
                         .fill(tint)
                         .frame(width: geometry.size.width * min(max(value, 0), 100) / 100)
+                } else {
+                    RoundedRectangle(cornerRadius: height / 2)
+                        .stroke(Color.secondary.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
                 }
             }
         }
@@ -560,7 +562,9 @@ struct SignedInProviderPage: View {
                 Text(model.lastSuccessAt.map { "Updated \(QuotaFormatting.age(since: $0, now: now))" }
                     ?? "Not yet refreshed")
                     .lineLimit(1)
-                Text(ProviderPresentation.humanizeSource(provider.source))
+                Text(provider.usageState == .stale
+                    ? "Stale - \(ProviderPresentation.humanizeSource(provider.source))"
+                    : ProviderPresentation.humanizeSource(provider.source))
                     .lineLimit(1)
             }
             .font(Typography.font(10))
@@ -619,7 +623,7 @@ struct WindowSection: View {
                 // eye reads one right-hand column instead of two.
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(window.percentRemaining.map { "\(QuotaFormatting.percent($0)) left" }
-                        ?? "Not measurable")
+                        ?? "Unknown")
                         .font(Typography.font(16, weight: .semibold))
                         .lineLimit(1)
                     Text(resetText)

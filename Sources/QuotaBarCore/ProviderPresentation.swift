@@ -8,6 +8,7 @@ public enum ProviderAvailability: Sendable, Equatable {
     case connected
     /// Fresh quota, but quota-axi found no account identity to attribute it to.
     case measurable
+    case stale
     /// The source program a provider needs is missing from this machine.
     case cliUnavailable
     /// quota-axi reached the provider but cannot measure the named windows yet.
@@ -21,6 +22,7 @@ public enum ProviderAvailability: Sendable, Equatable {
         switch self {
         case .connected: "Connected"
         case .measurable: "Measurable"
+        case .stale: "Stale"
         case .cliUnavailable: "CLI unavailable"
         case let .unresolvedWindows(count):
             count == 1 ? "1 unresolved window" : "\(count) unresolved windows"
@@ -33,7 +35,7 @@ public enum ProviderAvailability: Sendable, Equatable {
     /// the Overview on first launch.
     public var isMeasurable: Bool {
         switch self {
-        case .connected, .measurable: true
+        case .connected, .measurable, .stale: true
         default: false
         }
     }
@@ -48,6 +50,7 @@ public enum ProviderAvailability: Sendable, Equatable {
     public var tone: Tone {
         switch self {
         case .connected, .measurable: .good
+        case .stale: .warning
         case .signInRequired: .neutral
         case .cliUnavailable: .warning
         case .unresolvedWindows: .critical
@@ -60,6 +63,7 @@ public extension QuotaProvider {
     /// Precedence matters: a missing CLI is reported before a missing sign-in,
     /// because installing the tool is the step that unblocks it.
     var availability: ProviderAvailability {
+        if usageState == .stale { return .stale }
         if isFresh {
             return account?.email?.nilIfEmpty == nil ? .measurable : .connected
         }
@@ -121,7 +125,7 @@ public extension QuotaProvider {
         case .signInRequired, .other:
             return "quota-axi could not find a usable \(displayName) sign-in. "
                 + "Sign in through \(displayName), then refresh QuotaBar."
-        case .connected, .measurable:
+        case .connected, .measurable, .stale:
             return "\(displayName) is reporting quota normally."
         }
     }
@@ -129,7 +133,7 @@ public extension QuotaProvider {
     var unavailableHeadline: String {
         switch availability {
         case .unresolvedWindows: "Quota windows unresolved"
-        default: "No quota data yet"
+        default: "Usage unknown"
         }
     }
 

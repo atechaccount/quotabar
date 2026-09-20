@@ -17,6 +17,34 @@ public struct QuotaSnapshot: Decodable, Sendable {
         schemaVersion = values.lossy(Int.self, forKey: .schemaVersion)
         providers = values.lossy([QuotaProvider].self, forKey: .providers) ?? []
     }
+
+    public func retainingLastKnownUsage(from previous: QuotaSnapshot?) -> QuotaSnapshot {
+        let previousByProvider = Dictionary(uniqueKeysWithValues: (previous?.providers ?? []).map {
+            ($0.provider, $0)
+        })
+        return QuotaSnapshot(
+            generatedAt: generatedAt,
+            schemaVersion: schemaVersion,
+            providers: providers.map { provider in
+                guard !provider.hasMeasuredUsage,
+                      let previous = previousByProvider[provider.provider],
+                      previous.hasMeasuredUsage
+                else { return provider }
+                return provider.retainingLastKnownUsage(from: previous)
+            })
+    }
+
+    private init(generatedAt: String?, schemaVersion: Int?, providers: [QuotaProvider]) {
+        self.generatedAt = generatedAt
+        self.schemaVersion = schemaVersion
+        self.providers = providers
+    }
+}
+
+public enum QuotaUsageState: Sendable, Equatable {
+    case fresh
+    case stale
+    case unknown
 }
 
 public struct QuotaProvider: Decodable, Identifiable, Sendable {
@@ -30,10 +58,27 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     public let attempts: [ProviderAttempt]?
     public let state: ProviderState?
     public let quotaSemantics: QuotaSemantics?
+    /// True only when AppModel carried a prior measurable reading into a newer,
+    /// unmeasurable provider result.
+    public let isLastKnownUsage: Bool
 
     public var id: String { provider }
     public var displayName: String { label?.nilIfEmpty ?? provider }
     public var isFresh: Bool { state?.status == "fresh" }
+
+    public var hasMeasuredUsage: Bool {
+        guard isFresh || state?.stale == true || isLastKnownUsage else { return false }
+        return sessionWindow?.percentRemaining != nil
+            || (quotaSemantics?.effectiveAvailability ?? []).contains {
+                $0.effectivePercentRemaining != nil
+            }
+            || allWindows.contains { $0.percentRemaining != nil }
+    }
+
+    public var usageState: QuotaUsageState {
+        guard hasMeasuredUsage else { return .unknown }
+        return isFresh && state?.stale != true && !isLastKnownUsage ? .fresh : .stale
+    }
 
     public var allWindows: [QuotaWindow] { windows ?? [] }
 
@@ -51,7 +96,7 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     /// lowest window. Always carries the label of whatever it measured, so the
     /// number on screen is never an unattributed percentage.
     public var headline: QuotaHeadline? {
-        guard isFresh else { return nil }
+        guard usageState != .unknown else { return nil }
 
         if let session = sessionWindow, let remaining = session.percentRemaining {
             return QuotaHeadline(
@@ -120,6 +165,32 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
         attempts = values.lossy([ProviderAttempt].self, forKey: .attempts)
         state = values.lossy(ProviderState.self, forKey: .state)
         quotaSemantics = values.lossy(QuotaSemantics.self, forKey: .quotaSemantics)
+        isLastKnownUsage = false
+    }
+
+    fileprivate func retainingLastKnownUsage(from previous: QuotaProvider) -> QuotaProvider {
+        QuotaProvider(
+            provider: provider, label: label, source: source, plan: plan, account: account,
+            windows: previous.windows, credits: credits, attempts: attempts, state: state,
+            quotaSemantics: previous.quotaSemantics, isLastKnownUsage: true)
+    }
+
+    private init(
+        provider: String, label: String?, source: String?, plan: String?, account: ProviderAccount?,
+        windows: [QuotaWindow]?, credits: ProviderCredits?, attempts: [ProviderAttempt]?,
+        state: ProviderState?, quotaSemantics: QuotaSemantics?, isLastKnownUsage: Bool)
+    {
+        self.provider = provider
+        self.label = label
+        self.source = source
+        self.plan = plan
+        self.account = account
+        self.windows = windows
+        self.credits = credits
+        self.attempts = attempts
+        self.state = state
+        self.quotaSemantics = quotaSemantics
+        self.isLastKnownUsage = isLastKnownUsage
     }
 }
 

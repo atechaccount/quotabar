@@ -52,10 +52,11 @@ final class AppModel: ObservableObject {
         startRefreshing: Bool = true,
         preferences injectedPreferences: AppPreferences? = nil,
         snapshot: QuotaSnapshot? = nil,
+        lastKnownSnapshot: QuotaSnapshot? = nil,
         lastSuccessAt: Date? = nil)
     {
         preferences = injectedPreferences ?? AppPreferences()
-        self.snapshot = snapshot
+        self.snapshot = snapshot?.retainingLastKnownUsage(from: lastKnownSnapshot)
         self.lastSuccessAt = lastSuccessAt
         guard startRefreshing else { return }
 
@@ -120,8 +121,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The Overview lists only providers with fresh, measurable quota. Everything
-    /// else is one quiet line pointing at Preferences.
+    /// Fresh and stale readings both belong in the Overview. Unknown providers
+    /// remain available on their own enabled page without inventing a row value.
     var overviewProviders: [QuotaProvider] {
         tabProviders.filter { $0.availability.isMeasurable }
     }
@@ -220,9 +221,10 @@ final class AppModel: ObservableObject {
             isRefreshing = false
             switch result {
             case let .success(snapshot):
-                self.snapshot = snapshot
-                preferences.seedVisibilityIfNeeded(from: snapshot)
-                preferences.seedFocusIfNeeded(from: snapshot)
+                let presentation = snapshot.retainingLastKnownUsage(from: self.snapshot)
+                self.snapshot = presentation
+                preferences.seedVisibilityIfNeeded(from: presentation)
+                preferences.seedFocusIfNeeded(from: presentation)
                 lastSuccessAt = Date()
                 lastError = nil
                 print("QuotaBar refresh succeeded reason=\(reason.rawValue) providers=\(snapshot.providers.count) at=\(ISO8601DateFormatter().string(from: Date()))")

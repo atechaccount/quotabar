@@ -25,28 +25,35 @@ public struct MenuBarReadout: Sendable, Equatable {
     public let providerLabel: String?
     public let percentRemaining: Double?
     public let windowLabel: String?
+    public let usageState: QuotaUsageState
 
     public init(
         provider: String?,
         providerLabel: String?,
         percentRemaining: Double?,
-        windowLabel: String?)
+        windowLabel: String?,
+        usageState: QuotaUsageState = .unknown)
     {
         self.provider = provider
         self.providerLabel = providerLabel
         self.percentRemaining = percentRemaining
         self.windowLabel = windowLabel
+        self.usageState = usageState
     }
 
     public static let empty = MenuBarReadout(
         provider: nil, providerLabel: nil, percentRemaining: nil, windowLabel: nil)
 
     public var accessibilityDescription: String {
-        guard let percentRemaining else { return "QuotaBar" }
+        guard let percentRemaining else {
+            guard let name = providerLabel ?? provider else { return "QuotaBar" }
+            return "QuotaBar, \(name) usage unknown"
+        }
         let percent = QuotaFormatting.percent(percentRemaining)
         let name = providerLabel ?? provider ?? "quota"
         let window = windowLabel.map { " \($0)" } ?? ""
-        return "QuotaBar, \(name)\(window) \(percent) remaining"
+        let stale = usageState == .stale ? ", stale" : ""
+        return "QuotaBar, \(name)\(window) \(percent) remaining\(stale)"
     }
 }
 
@@ -84,13 +91,15 @@ public enum MenuBarReadoutResolver {
                 provider: chosen.provider,
                 providerLabel: chosen.displayName,
                 percentRemaining: nil,
-                windowLabel: nil)
+                windowLabel: nil,
+                usageState: .unknown)
         }
         return MenuBarReadout(
             provider: chosen.provider,
             providerLabel: chosen.displayName,
             percentRemaining: headline.percentRemaining,
-            windowLabel: headline.windowLabel)
+            windowLabel: headline.windowLabel,
+            usageState: chosen.usageState)
     }
 
     /// The provider to focus when the captain has not picked one yet: a signed-in

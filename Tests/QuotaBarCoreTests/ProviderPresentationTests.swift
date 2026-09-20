@@ -78,7 +78,7 @@ struct ProviderAvailabilityTests {
         """)
         #expect(subject.availability == .signInRequired)
         #expect(subject.headline == nil)
-        #expect(subject.unavailableHeadline == "No quota data yet")
+        #expect(subject.unavailableHeadline == "Usage unknown")
         #expect(subject.unavailableGuidance.contains("Sign in through Cursor"))
 
         let diagnostics = subject.sourceDiagnostics

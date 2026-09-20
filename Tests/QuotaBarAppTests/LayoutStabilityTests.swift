@@ -61,6 +61,12 @@ struct LayoutStabilityTests {
         // Trailing, not leading: leading padding reopens the gap between the
         // mark and its number, which is what read as too wide.
         #expect(StatusItemController.reservedPercent(9).hasPrefix("9%"))
+        #expect(StatusItemController.reservedUnknown() == "???%")
+        let mark = ProviderMarkImage.menuBarImage(provider: "claude", dark: false)
+        let known = StatusItemController.statusTitle(mark: mark, percent: "100%").size().width
+        let unknown = StatusItemController.statusTitle(
+            mark: mark, percent: StatusItemController.reservedUnknown()).size().width
+        #expect(abs(known - unknown) < 0.5, "the unknown title changes menu bar width")
     }
 
     /// The mark travels in the attributed title so the gap between it and the

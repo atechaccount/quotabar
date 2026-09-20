@@ -65,6 +65,21 @@ struct HeadlineTests {
         let json = #"{"providers":[{"provider":"cursor","state":{"status":"auth_required"}}]}"#
         #expect(try provider(json).headline == nil)
     }
+
+    @Test
+    func anUnreadableRefreshRetainsTheLastKnownUsageAsStale() throws {
+        let previous = try QuotaParser.decode(#"{"providers":[{"provider":"claude","state":{"status":"fresh"},"windows":[{"kind":"session","percentRemaining":83}]}]}"#)
+        let current = try QuotaParser.decode(#"{"providers":[{"provider":"claude","state":{"status":"auth_required"}},{"provider":"cursor","state":{"status":"auth_required"}}]}"#)
+        let rendered = current.retainingLastKnownUsage(from: previous)
+        let stale = try #require(rendered.providers.first { $0.provider == "claude" })
+        let unknown = try #require(rendered.providers.first { $0.provider == "cursor" })
+
+        #expect(stale.headline?.percentRemaining == 83)
+        #expect(stale.usageState == .stale)
+        #expect(stale.availability == .stale)
+        #expect(unknown.headline == nil)
+        #expect(unknown.usageState == .unknown)
+    }
 }
 
 struct MenuBarReadoutTests {
@@ -132,6 +147,20 @@ struct MenuBarReadoutTests {
 
         #expect(readout.provider == "cursor")
         #expect(readout.percentRemaining == nil)
+        #expect(readout.accessibilityDescription == "QuotaBar, Cursor usage unknown")
+    }
+
+    @Test
+    func staleUsageRemainsInTheFocusedReadout() throws {
+        let previous = try QuotaParser.decode(#"{"providers":[{"provider":"claude","state":{"status":"fresh"},"windows":[{"kind":"session","percentRemaining":83}]}]}"#)
+        let current = try QuotaParser.decode(#"{"providers":[{"provider":"claude","state":{"status":"auth_required"}}]}"#)
+        let readout = MenuBarReadoutResolver.resolve(
+            snapshot: current.retainingLastKnownUsage(from: previous), mode: .focusedProvider,
+            focusedProvider: "claude", isVisible: { _ in true })
+
+        #expect(readout.percentRemaining == 83)
+        #expect(readout.usageState == .stale)
+        #expect(readout.accessibilityDescription.contains("stale"))
     }
 
     @Test

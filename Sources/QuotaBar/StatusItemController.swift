@@ -61,10 +61,21 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let kern = ProviderMarkImage.menuBarGap - ProviderMarkImage.backingInset
         title.addAttribute(
             .kern, value: kern, range: NSRange(location: title.length - 1, length: 1))
+        let numberStart = title.length
         title.append(NSAttributedString(string: percent, attributes: [
             .font: titleFont,
             .foregroundColor: NSColor.labelColor,
         ]))
+        if percent == reservedUnknown() {
+            let knownWidth = ("100%" as NSString).size(withAttributes: [.font: titleFont]).width
+            let unknownWidth = (percent as NSString).size(withAttributes: [.font: titleFont]).width
+            // NSTextAttachment's layout applies this attribute across all four
+            // character slots in the appended title.
+            let gaps = max(percent.count, 1)
+            title.addAttribute(
+                .kern, value: (knownWidth - unknownWidth) / CGFloat(gaps),
+                range: NSRange(location: numberStart, length: percent.count))
+        }
         return title
     }
 
@@ -136,7 +147,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let dark = Self.isDark(button.effectiveAppearance)
         let image = ProviderMarkImage.menuBarImage(provider: readout.provider, dark: dark)
 
-        let title = readout.percentRemaining.map { Self.reservedPercent($0) } ?? ""
+        let title = readout.percentRemaining.map { Self.reservedPercent($0) }
+            ?? (readout.provider == nil ? "" : Self.reservedUnknown())
 
         button.image = nil
         button.imagePosition = .noImage
@@ -171,6 +183,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let digits = text.filter(\.isNumber).count
         return text + String(repeating: "\u{2007}", count: max(0, 3 - digits))
     }
+
+    /// An explicit unknown percentage with the same four glyph slots as 100%.
+    static func reservedUnknown() -> String { "???%" }
 
     private func observeModel() {
         // `objectWillChange` fires before the value lands, so read on the next
