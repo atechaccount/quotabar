@@ -2,27 +2,43 @@ import AppKit
 import QuotaBarCore
 import SwiftUI
 
+/// One place for the column geometry, so the mark, label, percentage and bar line
+/// up down the whole list instead of drifting per row.
+enum Layout {
+    static let menuWidth: CGFloat = 320
+    static let markColumn: CGFloat = 16
+    static let percentColumn: CGFloat = 46
+    static let gutter: CGFloat = 9
+    static let horizontalPadding: CGFloat = 12
+    /// Indent that lines a window row's text up with the provider label above it.
+    static var textInset: CGFloat { markColumn + gutter }
+}
+
+// MARK: - Menu bar item
+
 struct MenuBarLabel: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        HStack(spacing: 3) {
-            QuotaGlyph()
-            if let percent = model.menuBarPercent {
-                Text(percent)
+        let readout = model.menuBarReadout
+        return HStack(spacing: 3) {
+            if let provider = readout.provider {
+                ProviderMark(provider: provider, size: 13)
+            } else {
+                QuotaGlyph()
+            }
+            if let remaining = readout.percentRemaining {
+                Text(QuotaFormatting.percent(remaining))
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .monospacedDigit()
             }
         }
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(readout.accessibilityDescription)
         .onAppear { model.statusItemAppeared() }
-    }
-
-    private var accessibilityLabel: String {
-        model.menuBarPercent.map { "QuotaBar, \($0) remaining" } ?? "QuotaBar"
     }
 }
 
+/// The app's own mark, used only when no provider is being shown.
 struct QuotaGlyph: View {
     var body: some View {
         Canvas { context, size in
@@ -38,10 +54,12 @@ struct QuotaGlyph: View {
                 context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .foreground)
             }
         }
-        .frame(width: 14, height: 14)
+        .frame(width: 13, height: 13)
         .accessibilityHidden(true)
     }
 }
+
+// MARK: - Dropdown
 
 struct QuotaMenuView: View {
     @ObservedObject var model: AppModel
@@ -51,35 +69,25 @@ struct QuotaMenuView: View {
             VStack(spacing: 0) {
                 header(now: context.date)
                 Divider()
-                providerList(now: context.date)
+                FocusSwitcher(model: model)
+                Divider()
+                overview(now: context.date)
                 Divider()
                 actions
             }
-            .frame(width: 350)
+            .frame(width: Layout.menuWidth)
         }
         .onAppear { model.menuOpened() }
     }
 
     private func header(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
                 Text("QuotaBar")
-                    .font(.headline)
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if model.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Refreshing")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 5) {
-                if let updated = model.lastSuccessAt {
-                    Text("Last updated \(QuotaFormatting.age(since: updated, now: now))")
-                } else {
-                    Text("Waiting for first refresh")
+                    ProgressView().controlSize(.small)
                 }
                 if model.lastError != nil, model.lastSuccessAt != nil {
                     Text("STALE")
@@ -90,154 +98,279 @@ struct QuotaMenuView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+
+            Text(model.lastSuccessAt.map {
+                "Updated \(QuotaFormatting.age(since: $0, now: now)) · all figures are remaining"
+            } ?? "Waiting for first refresh")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             if let error = model.lastError {
-                Label(error, systemImage: "exclamationmark.circle")
-                    .font(.caption)
+                Text(error)
+                    .font(.caption2)
                     .foregroundStyle(.orange)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(12)
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
-    private func providerList(now: Date) -> some View {
-        if model.providers.isEmpty {
-            Text(model.snapshot == nil ? "Loading provider quotas…" : "No providers are visible.")
+    private func overview(now: Date) -> some View {
+        if model.snapshot == nil {
+            Text("Loading provider quotas…")
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                .padding(.vertical, 22)
         } else {
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(model.providers) { provider in
-                        ProviderRow(provider: provider, now: now)
-                        if provider.id != model.providers.last?.id {
-                            Divider().padding(.leading, 34)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.activeProviders) { provider in
+                        ProviderCard(
+                            provider: provider,
+                            now: now,
+                            isFocused: provider.provider == model.preferences.focusedProvider,
+                            onFocus: { model.focus(on: provider.provider) })
+                        Divider().padding(.leading, Layout.horizontalPadding + Layout.textInset)
+                    }
+
+                    if !model.inactiveProviders.isEmpty {
+                        Text("NOT SIGNED IN")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, Layout.horizontalPadding)
+                            .padding(.top, 9)
+                            .padding(.bottom, 3)
+
+                        ForEach(model.inactiveProviders) { provider in
+                            InactiveProviderRow(provider: provider)
                         }
                     }
                 }
+                .padding(.bottom, 4)
             }
-            .frame(maxHeight: 520)
+            .frame(maxHeight: 430)
         }
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button {
                 model.refreshNow()
             } label: {
-                Label("Refresh now", systemImage: "arrow.clockwise")
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .font(.caption)
             }
 
             Spacer()
 
-            Button("Preferences…") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-
-            Button("Quit") {
-                NSApp.terminate(nil)
-            }
+            Button("Preferences…") { model.showPreferences() }
+                .font(.caption)
+            Button("Quit") { NSApp.terminate(nil) }
+                .font(.caption)
         }
         .buttonStyle(.borderless)
-        .padding(12)
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.vertical, 8)
     }
 }
 
-struct ProviderRow: View {
-    let provider: QuotaProvider
-    let now: Date
-
-    private var color: Color { Color(hex: BrandColors.hex(for: provider.provider)) }
-    private var windows: [QuotaWindow] { provider.windows ?? [] }
+/// Changing what the menu bar reads is one click from the dropdown, never buried
+/// behind a preferences window.
+struct FocusSwitcher: View {
+    @ObservedObject var model: AppModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Circle()
-                .fill(color)
-                .frame(width: 9, height: 9)
-                .padding(.top, 4)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(provider.displayName)
-                            .font(.system(size: 13, weight: .semibold))
-                        if let plan = provider.plan, !plan.isEmpty {
-                            Text(plan)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    headline
-                }
-
-                if provider.isFresh, let remaining = provider.headlineRemaining {
-                    ProgressView(value: min(max(remaining, 0), 100), total: 100)
-                        .tint(color)
-                        .controlSize(.small)
-
-                    if let reset = soonestReset {
-                        Text(QuotaFormatting.resetDescription(reset, now: now))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if windows.count > 1 {
-                        VStack(spacing: 2) {
-                            ForEach(Array(windows.enumerated()), id: \.offset) { _, window in
-                                windowLine(window)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .opacity(provider.isFresh ? 1 : 0.48)
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private var headline: some View {
-        if provider.isFresh, let remaining = provider.headlineRemaining {
-            Text(QuotaFormatting.percent(remaining))
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-        } else {
-            Text(provider.unavailableDescription)
-                .font(.caption)
+        HStack(spacing: 6) {
+            Text("Menu bar")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-        }
-    }
 
-    private func windowLine(_ window: QuotaWindow) -> some View {
-        HStack {
-            Text(window.label ?? window.kind ?? "window")
-            Spacer()
-            if let remaining = window.percentRemaining {
-                Text(QuotaFormatting.percent(remaining))
-                    .monospacedDigit()
+            Picker("", selection: Binding(
+                get: { model.preferences.focusMode },
+                set: { model.preferences.focusMode = $0 }))
+            {
+                ForEach(MenuBarFocusMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
             }
-            if let reset = QuotaFormatting.date(from: window.resetsAt) {
-                Text("· \(QuotaFormatting.resetDescription(reset, now: now))")
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-    }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .fixedSize()
 
-    private var soonestReset: Date? {
-        windows.compactMap { QuotaFormatting.date(from: $0.resetsAt) }.min()
+            if model.preferences.focusMode == .focusedProvider {
+                Picker("", selection: Binding(
+                    get: { model.preferences.focusedProvider },
+                    set: { model.focus(on: $0) }))
+                {
+                    if model.focusCandidates.isEmpty {
+                        Text("None").tag(model.preferences.focusedProvider)
+                    }
+                    ForEach(model.focusCandidates) { provider in
+                        Text(provider.displayName).tag(provider.provider)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.vertical, 6)
     }
 }
+
+// MARK: - Provider rows
+
+struct ProviderCard: View {
+    let provider: QuotaProvider
+    let now: Date
+    let isFocused: Bool
+    let onFocus: () -> Void
+
+    private var brandColor: Color {
+        Color(brandHex: BrandColors.hex(for: provider.provider))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: Layout.gutter) {
+                ProviderMark(provider: provider.provider, size: Layout.markColumn)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(provider.displayName)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .lineLimit(1)
+                    if let plan = provider.plan, !plan.isEmpty {
+                        Text(plan)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                if let headline = provider.headline {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(QuotaFormatting.percent(headline.percentRemaining))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                        Text("\(headline.windowLabel) left")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(width: Layout.percentColumn + 24, alignment: .trailing)
+                }
+            }
+
+            ForEach(provider.allWindows) { window in
+                WindowRow(window: window, tint: brandColor, now: now)
+            }
+
+            if let credits = provider.credits, credits.unlimited != true,
+               let remaining = credits.remaining
+            {
+                Text("\(Int(remaining)) \(credits.unit ?? "credits") remaining")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, Layout.textInset)
+            }
+        }
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.vertical, 9)
+        .background(isFocused ? brandColor.opacity(0.08) : .clear)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onFocus)
+        .help(isFocused ? "Shown in the menu bar" : "Click to show \(provider.displayName) in the menu bar")
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One window - its own label, its own remaining percent, its own reset.
+struct WindowRow: View {
+    let window: QuotaWindow
+    let tint: Color
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(window.displayLabel)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let cadence = QuotaFormatting.cadence(windowSeconds: window.windowSeconds) {
+                    Text(cadence)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                if let reset = QuotaFormatting.date(from: window.resetsAt) {
+                    Text(QuotaFormatting.resetDescription(reset, now: now))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                if let remaining = window.percentRemaining {
+                    Text(QuotaFormatting.percent(remaining))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+            }
+
+            if let remaining = window.percentRemaining {
+                ProgressView(value: min(max(remaining, 0), 100), total: 100)
+                    .tint(tint)
+                    .controlSize(.small)
+                    .frame(height: 3)
+            }
+        }
+        .padding(.leading, Layout.textInset)
+    }
+}
+
+struct InactiveProviderRow: View {
+    let provider: QuotaProvider
+
+    var body: some View {
+        HStack(spacing: Layout.gutter) {
+            ProviderMark(provider: provider.provider, size: Layout.markColumn)
+            Text(provider.displayName)
+                .font(.system(size: 11.5))
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Text(provider.unavailableDescription)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.vertical, 3)
+        .opacity(0.5)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Preferences
 
 struct PreferencesView: View {
     @ObservedObject var model: AppModel
@@ -257,14 +390,17 @@ struct PreferencesView: View {
                 }
             }
 
-            Picker("Menu bar display", selection: $preferences.displayStyle) {
-                ForEach(MenuBarDisplayStyle.allCases) { style in
-                    Text(style.title).tag(style)
+            Picker("Menu bar shows", selection: $preferences.focusMode) {
+                ForEach(MenuBarFocusMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
                 }
             }
 
-            if preferences.displayStyle == .pinned {
-                Picker("Pinned provider", selection: $preferences.pinnedProvider) {
+            if preferences.focusMode == .focusedProvider {
+                Picker("Focused provider", selection: Binding(
+                    get: { preferences.focusedProvider },
+                    set: { model.focus(on: $0) }))
+                {
                     Text("Choose a provider").tag("")
                     ForEach(model.allProviders) { provider in
                         Text(provider.displayName).tag(provider.provider)
@@ -299,28 +435,21 @@ struct PreferencesView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.allProviders) { provider in
-                        Toggle(provider.displayName, isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { preferences.isVisible(provider.provider) },
                             set: { preferences.setVisible($0, provider: provider.provider) }))
+                        {
+                            HStack(spacing: 7) {
+                                ProviderMark(provider: provider.provider, size: 13)
+                                Text(provider.displayName)
+                            }
+                        }
                     }
                 }
             }
         }
         .formStyle(.grouped)
-        .padding()
-        .frame(width: 480, height: 520)
+        .frame(width: 460, height: 520)
         .onAppear { launchAtLogin.loadStatusIfNeeded() }
-    }
-}
-
-private extension Color {
-    init(hex: String) {
-        let value = UInt64(hex.dropFirst(), radix: 16) ?? 0x7C7C80
-        self.init(
-            .sRGB,
-            red: Double((value >> 16) & 0xff) / 255,
-            green: Double((value >> 8) & 0xff) / 255,
-            blue: Double(value & 0xff) / 255,
-            opacity: 1)
     }
 }
