@@ -27,6 +27,10 @@ struct PreferencesView: View {
     var body: some View {
         content
             .frame(width: 510, height: scrolls ? 640 : nil)
+            // Tabular figures here too: the provider states carry counts and the
+            // refresh interval carries numbers, and this window is a separate
+            // view hierarchy that the popover's own setting never reached.
+            .monospacedDigit()
             .onAppear { launchAtLogin.loadStatusIfNeeded() }
     }
 

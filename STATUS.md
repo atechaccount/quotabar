@@ -17,6 +17,17 @@
 
 ## Recent round
 
+Six changes from the captain after running the built app.
+
+- **Nothing moves when a number changes.** He diagnosed it exactly: a `1` is narrower than a `4` in a proportional font, so Claude and Codex laid out differently. Tabular figures are now the rule for every changing number - the popover root, the Preferences root, and the status item button, which AppKit draws and neither SwiftUI root reached. Only four call sites had them before; the freshness ages, the hidden-provider count, the credits line, the provider-state labels and the whole menu bar title did not. Digit *count* is handled separately by reserved columns and a fixed panel height, because tabular figures do not make `9%` as wide as `100%`. The self-test reports the panel size for every page: `overview=430x682 claude=430x682 codex=430x682 agy=430x682 ... stable=true`.
+- **No mark beside the provider name** on the provider pages. The tab above already identifies the provider.
+- **The window value sits above its reset time** rather than beside it, at the reset text's existing size.
+- **The dropdown appears instead of animating open** (`NSPopover.animates = false`).
+- **The menu bar mark has a faint backing plate** so a colored mark stays legible against a wallpaper showing through a translucent menu bar. The strength is deliberately barely-there; `menubar-backing.png` from the render hook shows four strengths over four backgrounds for choosing by eye.
+- **A tab strip tint is offered but not shipped** (`Layout.tabStripTintOpacity` is 0). The render hook draws both variants.
+
+## Earlier round
+
 The presentation layer was rebuilt against the approved design in `docs/design/`. The quota model, the refresh scheduler, the preferences store and the evidence hooks were kept.
 
 - **The menu bar mark is fixed.** The SwiftUI `MenuBarExtra` was replaced by an AppKit `NSStatusItem` in `StatusItemController`. Its button gets a real `NSImage` of the provider's mark, sized for the menu bar, painted in the contrast-adjusted brand color with `isTemplate` off, plus the percentage as the title. It re-renders when the focused provider or the effective appearance changes. The old label passed a custom SwiftUI `Shape`, which the status item host dropped while keeping the `Text` - a percentage with no icon.

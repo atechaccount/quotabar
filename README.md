@@ -53,6 +53,10 @@ The menu bar item is a plain AppKit `NSStatusItem`. Its button gets a real `NSIm
 
 This is deliberate and load-bearing. QuotaBar previously used SwiftUI's `MenuBarExtra` with a custom `Shape` in its label; the status item host keeps the `Text` from such a label and silently drops the shape, so the menu bar showed a bare percentage with no mark at all. `StatusItemController` owns the status item, re-renders on every model change and on every appearance change, and `SelfTest` rasterises the live button to prove the mark is actually drawn.
 
+The mark sits on a very faint rounded plate - a little white on a dark menu bar, a little black on a light one - so a colored mark stays legible when a bright or busy wallpaper shows through a translucent menu bar. The strength is `ProviderMarkImage.backingOpacityOnDark` / `backingOpacityOnLight`. It is meant to read as the background settling slightly, never as a button.
+
+The title uses tabular figures and is padded to three digit widths with `U+2007 FIGURE SPACE`, so the item keeps one width from 0% to 100% and nothing to its left in the menu bar shuffles as the quota falls.
+
 - **Focused provider** (the default) shows one chosen provider and its session percentage.
 - **Lowest of shown** shows whichever visible provider has the least left. This is available but is deliberately not the default, because the lowest number anywhere is rarely the one you are working against.
 - **Icon only** shows the app mark alone.
@@ -74,7 +78,19 @@ The popover is a tab strip over one page at a time, not a single flat column.
 - **A signed-in provider page** shows that provider's account, plan, source and freshness, then one section per window quota-axi actually reported, with the percentage and the reset time each on their own right edge.
 - **An unavailable provider page** is hidden until the provider is turned on by hand. It states the real status, lists every source quota-axi tried and what came back, and says what QuotaBar will and will not do about it. It never renders a missing quota as zero.
 
-Labels sit on the left; comparable numbers and reset times sit on clean right edges throughout.
+On a provider page the window's remaining percentage sits directly above its reset time, so the eye reads one right-hand column instead of two. Labels sit on the left; comparable numbers and reset times sit on clean right edges throughout. The provider pages carry no mark beside the provider name - the tab above already says which provider the page is.
+
+The dropdown appears rather than animating open, and the same four action rows are present on every page.
+
+### Nothing moves
+
+Two separate causes, both fixed structurally rather than case by case.
+
+**Digit shape.** In a proportional font the digit `1` is narrower than a `4`, so two numbers with the same character count still take different widths and everything beside them shifts. Every changing number therefore renders with tabular figures: the popover and the Preferences window each apply `.monospacedDigit()` at their root, and the menu bar title - which AppKit draws, so it never saw either - sets `NSFont.monospacedDigitSystemFont` on the status item button.
+
+**Digit count.** Tabular figures do not help when `9%` becomes `100%`. Every changing number also sits in a reserved, right-aligned column whose width is a constant in `Layout`, and the page area is a fixed height so the panel never resizes as tabs are switched.
+
+`LayoutStabilityTests` covers both halves, and `QUOTABAR_SELFTEST` reports the panel size for every page in the running app.
 
 The approved mockups for all of this are committed in [`docs/design`](docs/design/README.md) and are the acceptance criteria for interface changes.
 
@@ -126,11 +142,11 @@ QUOTABAR_VERIFY=1   ./dist/QuotaBar.app/Contents/MacOS/QuotaBar   # preferences 
 QUOTABAR_RENDER=.artifacts/render ./dist/QuotaBar.app/Contents/MacOS/QuotaBar  # layout PNGs
 ```
 
-`QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, the visibility seed, every mark's ink coverage and average color in both appearances, and then reads the **real** `NSStatusBarButton`: what image and title it was handed, and how much ink the live button actually draws in the mark region. That last check exists because the previous self-test rendered marks offscreen, passed, and still shipped a menu bar with no icon in it. It also exercises the sticky selection end to end and restores the focus it borrowed.
+`QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, the visibility seed, every mark's ink coverage and average color in both appearances, and then reads the **real** `NSStatusBarButton`: what image and title it was handed, and how much ink the live button actually draws in the mark region. That last check exists because the previous self-test rendered marks offscreen, passed, and still shipped a menu bar with no icon in it. It then opens the real popover, walks every page, and reports the panel size each one settles at, so a page that resizes the window shows up as a number rather than as a complaint. It also exercises the sticky selection end to end and restores the focus it borrowed.
 
 `QUOTABAR_VERIFY` opens the real preferences window three times, including once after closing it, and reports whether it was visible, key and frontmost each time. It substitutes a stub for the login-item status so opening the window cannot trigger a system prompt, and says so in its output. Note that this hook runs at launch with no user interaction, and macOS 14 can refuse activation in that situation, so it may report `appActive=false`; the window is ordered front regardless and still appears.
 
-`QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen. Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
+`QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen. It also writes `menubar-backing.png`, a swatch of the menu bar mark at four backing strengths over a light menu bar, a dark one, and a bright and a busy wallpaper, for choosing that value by eye. Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
 
 All three quit the app when they finish.
 

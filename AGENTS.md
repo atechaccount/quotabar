@@ -8,6 +8,8 @@
 - A provider's headline number is its session window, not its weekly or lowest window. See `QuotaProvider.headline`.
 - Selecting a provider tab also points the menu bar at it; selecting Overview must not. The stored focus is never rewritten as a side effect of hiding a provider.
 - Labels go left; comparable numbers and reset times go on fixed right-aligned columns. The column widths are in `Layout` in `Sources/QuotaBar/Views.swift`.
+- Nothing in the interface may move when a number changes. Two causes, both already handled structurally: digit shape needs tabular figures (root `.monospacedDigit()` on the popover and on Preferences, `NSFont.monospacedDigitSystemFont` on the status item button, which AppKit draws and neither SwiftUI root reaches), and digit count needs a reserved column or a padded field. `Layout.contentHeight` keeps the panel one size for every page. `LayoutStabilityTests` and the `panelsize` line of the self-test guard this.
+- A new view that renders a changing number belongs under one of those two roots, or it needs its own tabular-figure setting.
 - Provider visibility is seeded once from the first measurable snapshot and never overridden afterwards. See `ProviderVisibilitySeed`.
 - Verify UI changes with the `QUOTABAR_SELFTEST`, `QUOTABAR_VERIFY` and `QUOTABAR_RENDER` hooks documented in `README.md`; they print evidence without screenshots or system permissions. The self-test must keep reading the real status button: an offscreen-only mark check passed while the real menu bar was empty.
 - Never read the login-item status outside an open Preferences window, and never register a login item unprompted. Both trip a system permission dialog.

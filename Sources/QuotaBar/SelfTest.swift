@@ -22,6 +22,11 @@ enum SelfTest {
         dumpMarkResources()
         dumpStatusItem(model: model, statusItem: statusItem)
         print("SELFTEST popover \(await statusItem.popoverReport())")
+
+        let sizes = await statusItem.pageSizeReport()
+        let distinct = Set(sizes.map { $0.split(separator: "=").last.map(String.init) ?? "" })
+        print("SELFTEST panelsize \(sizes.joined(separator: " ")) "
+            + "distinctSizes=\(distinct.count) stable=\(distinct.count <= 1)")
         await dumpStickyFocus(model: model, statusItem: statusItem)
         await observeSchedule(model: model)
 
@@ -132,7 +137,7 @@ enum SelfTest {
         }
 
         let expectedTitle = model.menuBarReadout.percentRemaining
-            .map { " " + QuotaFormatting.percent($0) } ?? ""
+            .map { " " + StatusItemController.reservedPercent($0) } ?? ""
         print("SELFTEST statusitem buttonTitle=\"\(button.title)\" "
             + "expected=\"\(expectedTitle)\" "
             + "match=\(button.title == expectedTitle) "

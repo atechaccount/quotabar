@@ -43,12 +43,21 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         statusItem.behavior = [.terminationOnRemoval]
         if let button = statusItem.button {
             button.imagePosition = .imageLeft
+            // Tabular figures in the menu bar too. The title is drawn by AppKit,
+            // not SwiftUI, so the popover's `.monospacedDigit()` never reached
+            // it: a 1 was narrower than a 4 and the item breathed as the number
+            // changed.
+            button.font = NSFont.monospacedDigitSystemFont(
+                ofSize: NSFont.systemFontSize, weight: .regular)
             button.target = self
             button.action = #selector(togglePopover(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         popover.behavior = .transient
+        // The dropdown should appear, not unfold. This is behavior rather than a
+        // preference because nobody wants a slow menu.
+        popover.animates = false
         popover.delegate = self
         let host = NSHostingController(
             rootView: QuotaMenuView(model: model, dismiss: { [weak self] in self?.closePopover() }))
@@ -76,12 +85,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
         let readout = model.menuBarReadout
         let dark = Self.isDark(button.effectiveAppearance)
-        let image = ProviderMarkImage.image(
-            provider: readout.provider,
-            dark: dark,
-            side: ProviderMarkImage.menuBarSide)
+        let image = ProviderMarkImage.menuBarImage(provider: readout.provider, dark: dark)
 
-        let title = readout.percentRemaining.map { " " + QuotaFormatting.percent($0) } ?? ""
+        let title = readout.percentRemaining.map { " " + Self.reservedPercent($0) } ?? ""
 
         button.image = image
         button.title = title
@@ -100,6 +106,17 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// Tabular figures stop a 1 being narrower than a 4, but they do not stop
+    /// 9% being narrower than 100%. The number is padded to three digit widths
+    /// with FIGURE SPACE, which in a tabular font is exactly one digit wide, so
+    /// the item keeps one width from 0% to 100% and nothing in the menu bar
+    /// shuffles as the quota falls.
+    static func reservedPercent(_ value: Double) -> String {
+        let text = QuotaFormatting.percent(value)
+        let digits = text.filter(\.isNumber).count
+        return String(repeating: "\u{2007}", count: max(0, 3 - digits)) + text
     }
 
     private func observeModel() {
@@ -168,10 +185,50 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         view.layoutSubtreeIfNeeded()
         let fitting = view.fittingSize
         return String(
-            format: "shown=%@ contentSize=%.0fx%.0f fitting=%.0fx%.0f subviews=%d",
+            format: "shown=%@ animates=%@ contentSize=%.0fx%.0f fitting=%.0fx%.0f subviews=%d",
             popover.isShown ? "yes" : "NO",
+            popover.animates ? "yes" : "no",
             view.frame.width, view.frame.height,
             fitting.width, fitting.height,
             view.subviews.count)
+    }
+
+    /// Walks every page with the popover open and reports the panel size each
+    /// one settles at. The captain's complaint is that switching providers moves
+    /// things, so the evidence is a list of sizes that had better all be equal.
+    /// The page and the menu bar focus are put back exactly as they were.
+    func pageSizeReport() async -> [String] {
+        let originalPage = model.resolvedPage
+        let originalFocus = model.preferences.focusedProvider
+        defer {
+            model.select(originalPage)
+            if !originalFocus.isEmpty { model.preferences.focus(on: originalFocus) }
+            refresh()
+        }
+
+        showPopover()
+        defer { closePopover() }
+
+        var lines: [String] = []
+        // Claude and Codex twice, because switching back and forth is how he
+        // actually noticed it.
+        let pages: [MenuPage] = [.overview]
+            + model.tabProviders.map { .provider($0.provider) }
+            + model.tabProviders.prefix(2).map { .provider($0.provider) }
+
+        for page in pages {
+            model.select(page)
+            guard let view = popover.contentViewController?.view else { continue }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            view.layoutSubtreeIfNeeded()
+            let name: String
+            switch page {
+            case .overview: name = "overview"
+            case let .provider(key): name = key
+            }
+            lines.append(String(
+                format: "%@=%.0fx%.0f", name, view.frame.width, view.frame.height))
+        }
+        return lines
     }
 }

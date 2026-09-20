@@ -91,6 +91,108 @@ enum RenderCheck {
 
             write(preferences(snapshot: snapshot, focus: "claude", dark: dark),
                   to: root.appendingPathComponent("preferences\(suffix).png"))
+
+            // The tab strip tint is a question, not a decision: both are drawn
+            // so it can be settled by eye.
+            write(page("overview", snapshot: snapshot, focus: "claude", dark: dark, tint: 0.05),
+                  to: root.appendingPathComponent("overview-tinted-tabs\(suffix).png"))
+        }
+
+        write(menuBarBackingSheet(), to: root.appendingPathComponent("menubar-backing.png"))
+    }
+
+    /// A contact sheet of the menu bar mark at four backing strengths, over the
+    /// three backgrounds that matter: a light menu bar, a dark one, and a bright
+    /// busy wallpaper showing through a translucent one. Shipped strength is
+    /// marked. This is a swatch, not a screenshot: it asks for no permission and
+    /// captures nothing.
+    private static func menuBarBackingSheet() -> NSImage? {
+        let swatch: CGFloat = 92
+        let rowHeight: CGFloat = 46
+        let strengths: [(label: String, value: Double?)] = [
+            ("none", 0),
+            ("shipped", nil),
+            ("0.18", 0.18),
+            ("0.28", 0.28),
+        ]
+        let backdrops: [(name: String, dark: Bool, fill: (NSRect) -> Void)] = [
+            ("Light menu bar", false, { rect in
+                NSColor(srgbRed: 0.96, green: 0.96, blue: 0.97, alpha: 1).setFill()
+                rect.fill()
+            }),
+            ("Dark menu bar", true, { rect in
+                NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1).setFill()
+                rect.fill()
+            }),
+            ("Bright wallpaper", false, { rect in
+                NSGradient(
+                    colors: [
+                        NSColor(srgbRed: 0.98, green: 0.80, blue: 0.35, alpha: 1),
+                        NSColor(srgbRed: 0.45, green: 0.78, blue: 0.95, alpha: 1),
+                        NSColor(srgbRed: 0.93, green: 0.55, blue: 0.72, alpha: 1),
+                    ])?.draw(in: rect, angle: 12)
+            }),
+            ("Busy dark wallpaper", true, { rect in
+                NSGradient(
+                    colors: [
+                        NSColor(srgbRed: 0.07, green: 0.10, blue: 0.24, alpha: 1),
+                        NSColor(srgbRed: 0.36, green: 0.14, blue: 0.30, alpha: 1),
+                        NSColor(srgbRed: 0.05, green: 0.22, blue: 0.24, alpha: 1),
+                    ])?.draw(in: rect, angle: 12)
+            }),
+        ]
+
+        let width = swatch * CGFloat(strengths.count) + 150
+        let height = rowHeight * CGFloat(backdrops.count) + 26
+
+        return NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
+            NSColor(srgbRed: 0.13, green: 0.13, blue: 0.15, alpha: 1)
+                .setFill()
+            NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+            let caption: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+                .foregroundColor: NSColor(white: 0.82, alpha: 1),
+            ]
+            for (column, strength) in strengths.enumerated() {
+                let x = 150 + CGFloat(column) * swatch
+                (strength.label as NSString).draw(
+                    at: NSPoint(x: x + swatch / 2 - 18, y: 7), withAttributes: caption)
+            }
+
+            for (row, backdrop) in backdrops.enumerated() {
+                let y = 24 + CGFloat(row) * rowHeight
+                (backdrop.name as NSString).draw(
+                    at: NSPoint(x: 10, y: y + rowHeight / 2 - 6), withAttributes: caption)
+
+                for (column, strength) in strengths.enumerated() {
+                    let cell = NSRect(
+                        x: 150 + CGFloat(column) * swatch, y: y,
+                        width: swatch, height: rowHeight)
+                    backdrop.fill(cell)
+
+                    let opacity = strength.value
+                        ?? ProviderMarkImage.defaultBackingOpacity(dark: backdrop.dark)
+                    let mark = ProviderMarkImage.image(
+                        provider: "claude",
+                        dark: backdrop.dark,
+                        side: ProviderMarkImage.menuBarSide,
+                        backingOpacity: opacity)
+                    let side = ProviderMarkImage.menuBarSide
+                    mark.draw(in: NSRect(
+                        x: cell.midX - side / 2 - 14,
+                        y: cell.midY - side / 2,
+                        width: side, height: side))
+
+                    let number: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                        .foregroundColor: backdrop.dark ? NSColor.white : NSColor.black,
+                    ]
+                    ("84%" as NSString).draw(
+                        at: NSPoint(x: cell.midX + 6, y: cell.midY - 7), withAttributes: number)
+                }
+            }
+            return true
         }
     }
 
@@ -115,11 +217,14 @@ enum RenderCheck {
         snapshot: QuotaSnapshot,
         focus: String,
         dark: Bool,
-        show extra: [String] = []) -> NSImage?
+        show extra: [String] = [],
+        tint: Double = Layout.tabStripTintOpacity) -> NSImage?
     {
         let subject = model(snapshot: snapshot, focus: focus, show: extra)
         subject.select(page == "overview" ? .overview : .provider(page))
-        return render(QuotaMenuView(model: subject, scrolls: false), dark: dark)
+        return render(
+            QuotaMenuView(model: subject, scrolls: false, tabStripTintOpacity: tint),
+            dark: dark)
     }
 
     private static func preferences(

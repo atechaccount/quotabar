@@ -11,15 +11,26 @@ enum Layout {
     static let tabSpacing: CGFloat = 4
     /// Past this the strip scrolls instead of squeezing every tab thinner.
     static let maxTabsAcross = 5
-    static let maxContentHeight: CGFloat = 520
+
+    /// The page area is a fixed height, so the popover never resizes when the
+    /// page changes. A panel that grows and shrinks under the pointer is the
+    /// most visible kind of layout shift there is.
+    static let contentHeight: CGFloat = 468
 
     /// Right-hand number columns. Fixed widths are what make the numbers line up
-    /// with each other rather than with whatever label happens to precede them.
+    /// with each other rather than with whatever label happens to precede them,
+    /// and they are what stops a 9%, a 91% and a 100% laying out differently.
     static let headlineColumn: CGFloat = 96
     static let laneLabelColumn: CGFloat = 116
     static let laneValueColumn: CGFloat = 38
-    static let windowValueColumn: CGFloat = 82
-    static let resetColumn: CGFloat = 108
+    /// Wide enough for the longest reset string, which now sits under the value.
+    static let windowValueColumn: CGFloat = 116
+    /// The freshness and source block on a provider page.
+    static let metaColumn: CGFloat = 104
+
+    /// A subtle tint behind the tab strip. Off by default; the render check
+    /// draws both so the choice can be made by eye rather than by argument.
+    static let tabStripTintOpacity: Double = 0
 
     static func tabWidth(count: Int) -> CGFloat {
         let across = CGFloat(max(1, min(count, maxTabsAcross)))
@@ -37,25 +48,29 @@ struct QuotaMenuView: View {
     /// `ScrollView` as an empty box, so a scrolling shell would make the layout
     /// evidence a picture of nothing.
     var scrolls = true
+    var tabStripTintOpacity = Layout.tabStripTintOpacity
 
     @State private var now = Date()
     private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
-            TabStrip(model: model, scrolls: scrolls)
+            TabStrip(model: model, scrolls: scrolls, tintOpacity: tabStripTintOpacity)
             Divider()
 
             let body = page(now: now)
                 .padding(.horizontal, Layout.contentPadding)
                 .padding(.top, Layout.contentPadding)
                 .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
 
             if scrolls {
                 ScrollView {
                     body
                 }
-                .frame(maxHeight: Layout.maxContentHeight)
+                // A fixed height, not a maximum: the popover then keeps one size
+                // for every page instead of resizing as tabs are switched.
+                .frame(height: Layout.contentHeight)
                 .scrollBounceBehavior(.basedOnSize)
             } else {
                 body
@@ -64,6 +79,9 @@ struct QuotaMenuView: View {
             ActionRows(model: model, dismiss: dismiss)
         }
         .frame(width: Layout.popoverWidth)
+        // Every number in the popover is tabular, so a value changing from 9%
+        // to 100% cannot change the width of anything around it.
+        .monospacedDigit()
         .onReceive(clock) { now = $0 }
     }
 
@@ -97,20 +115,24 @@ struct QuotaMenuView: View {
 struct TabStrip: View {
     @ObservedObject var model: AppModel
     var scrolls = true
+    var tintOpacity = Layout.tabStripTintOpacity
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let providers = model.tabProviders
         let width = Layout.tabWidth(count: providers.count + 1)
 
-        if scrolls {
-            ScrollView(.horizontal) {
+        Group {
+            if scrolls {
+                ScrollView(.horizontal) {
+                    strip(providers: providers, width: width)
+                }
+                .scrollIndicators(.never)
+            } else {
                 strip(providers: providers, width: width)
             }
-            .scrollIndicators(.never)
-        } else {
-            strip(providers: providers, width: width)
         }
+        .background(Color.primary.opacity(tintOpacity))
     }
 
     @ViewBuilder
@@ -490,11 +512,10 @@ struct SignedInProviderPage: View {
         }
     }
 
+    /// No provider mark here. The tab above already says which provider this
+    /// page is, and repeating it pushed the name off the left edge.
     private var header: some View {
-        HStack(alignment: .top, spacing: 9) {
-            ProviderMark(provider: provider.provider, size: 23)
-                .padding(.top, 1)
-
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(provider.displayName)
                     .font(.system(size: 19, weight: .semibold))
@@ -503,23 +524,29 @@ struct SignedInProviderPage: View {
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if let plan = provider.planDescription {
-                        Text(plan)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+                    // Always drawn, so a provider without a plan does not make
+                    // this page a line shorter than the one beside it.
+                    Text(provider.planDescription ?? " ")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 1) {
                 Text(model.lastSuccessAt.map { "Updated \(QuotaFormatting.age(since: $0, now: now))" }
                     ?? "Not yet refreshed")
+                    .lineLimit(1)
                 Text(ProviderPresentation.humanizeSource(provider.source))
+                    .lineLimit(1)
             }
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
+            // Fixed, so "Updated just now" and "Updated 12m ago" do not move the
+            // name beside them.
+            .frame(width: Layout.metaColumn, alignment: .trailing)
         }
     }
 
@@ -559,7 +586,7 @@ struct WindowSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(window.titleLabel)
                     .font(.system(size: 16, weight: .regular))
                     .lineLimit(1)
@@ -567,17 +594,19 @@ struct WindowSection: View {
 
                 Spacer(minLength: 8)
 
-                Text(window.percentRemaining.map { "\(QuotaFormatting.percent($0)) left" } ?? "Not measurable")
-                    .font(.system(size: 16, weight: .semibold))
-                    .monospacedDigit()
-                    .frame(width: Layout.windowValueColumn, alignment: .trailing)
-
-                Text(resetText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .frame(width: Layout.resetColumn, alignment: .trailing)
+                // The value sits above its reset rather than beside it, so the
+                // eye reads one right-hand column instead of two.
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(window.percentRemaining.map { "\(QuotaFormatting.percent($0)) left" }
+                        ?? "Not measurable")
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(1)
+                    Text(resetText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(width: Layout.windowValueColumn, alignment: .trailing)
             }
 
             Meter(value: window.percentRemaining, tint: accent, height: 9)
@@ -617,19 +646,20 @@ struct UnavailableProviderPage: View {
         }
     }
 
+    /// No provider mark beside the name, for the same reason as the signed-in
+    /// page: the tab above already identifies the provider.
     private var header: some View {
-        HStack(alignment: .center, spacing: 9) {
-            ProviderMark(provider: provider.provider, size: 23)
-
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(provider.displayName)
                     .font(.system(size: 19, weight: .semibold))
                 Text(provider.account?.email ?? "No account detected")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
 
             StatusPill(text: provider.availability.label, tone: provider.availability.tone)
         }
@@ -760,13 +790,14 @@ struct ActionRows: View {
                 dismiss()
                 model.showPreferences()
             }
-            if case .provider = model.resolvedPage {
-                Divider()
-                row("About QuotaBar", shortcut: nil, key: nil) {
-                    dismiss()
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.orderFrontStandardAboutPanel(nil)
-                }
+            Divider()
+            // Present on every page, including Overview. The mockups show it only
+            // on the provider pages, but a page-dependent row count changes the
+            // height of the whole panel when tabs are switched.
+            row("About QuotaBar", shortcut: nil, key: nil) {
+                dismiss()
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.orderFrontStandardAboutPanel(nil)
             }
             Divider()
             row("Quit QuotaBar", shortcut: "⌘Q", key: "q") {
