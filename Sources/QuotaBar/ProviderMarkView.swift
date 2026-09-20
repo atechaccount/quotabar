@@ -1,3 +1,4 @@
+import AppKit
 import QuotaBarCore
 import SwiftUI
 
@@ -27,6 +28,18 @@ extension Color {
 
     init(brandHex hex: String) {
         self.init(readable: BrandColors.rgb(fromHex: hex))
+    }
+
+    /// The colour back in the form the appearance settings store: sRGB
+    /// components, which is the space every brand colour in QuotaBar is
+    /// expressed in.
+    var brandRGB: BrandRGB {
+        let resolved = NSColor(self).usingColorSpace(.sRGB)
+            ?? NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+        return BrandRGB(
+            red: Double(resolved.redComponent),
+            green: Double(resolved.greenComponent),
+            blue: Double(resolved.blueComponent))
     }
 
     /// The brand color already nudged to clear the contrast floor on this

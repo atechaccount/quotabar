@@ -170,7 +170,12 @@ enum SelfTest {
         }
 
         print("SELFTEST statusitem buttonInk \(buttonInkReport(button))")
-        dumpMenuBarGapSweep(button: button, provider: model.menuBarReadout.provider)
+        dumpAppearance(model: model, button: button)
+        dumpAppearanceSweep(model: model, statusItem: statusItem, button: button)
+        dumpMenuBarGapSweep(
+            button: button,
+            provider: model.menuBarReadout.provider,
+            appearance: model.preferences.menuBarAppearance)
 
     }
 
@@ -253,7 +258,89 @@ enum SelfTest {
     /// The gap between the mark and its number, measured at every digit count
     /// and in both appearances. It has to be tiny, and it has to never reach
     /// zero - a zero here means the glyphs have run into each other.
-    private static func dumpMenuBarGapSweep(button: NSStatusBarButton, provider: String?) {
+    /// What the appearance settings actually did to the drawn item: which plate
+    /// is in play, whether the button's own layer carries the wide one, and what
+    /// face and colour the number came out in.
+    private static func dumpAppearance(model: AppModel, button: NSStatusBarButton) {
+        let appearance = model.preferences.menuBarAppearance
+        let dark = StatusItemController.isDark(button.effectiveAppearance)
+        let plate = StatusItemController.wholeItemPlate(appearance: appearance, dark: dark)
+        let layerAlpha = button.layer?.backgroundColor?.alpha ?? 0
+        let font = (button.attributedTitle.length > 0
+            ? button.attributedTitle.attribute(
+                .font, at: button.attributedTitle.length - 1, effectiveRange: nil) as? NSFont
+            : nil) ?? StatusItemController.titleFont
+
+        print(String(
+            format: "SELFTEST appearance scope=%@ mark=%@ backing=%@ text=%@ font=%@ "
+                + "drawnFont=%@ wholeItemPlate=%@ layerAlpha=%.3f",
+            appearance.backingScope.rawValue,
+            appearance.markStyle.rawValue,
+            appearance.backingColorStyle.rawValue,
+            appearance.textColorStyle.rawValue,
+            appearance.font.rawValue,
+            font.fontName,
+            plate == nil ? "none" : "yes",
+            layerAlpha))
+    }
+
+    /// Each appearance option put through the real status item, because the
+    /// plate that covers mark and number together is the button's own layer -
+    /// nothing offscreen can prove it landed. The captain's own settings are put
+    /// back at the end.
+    private static func dumpAppearanceSweep(
+        model: AppModel, statusItem: StatusItemController, button: NSStatusBarButton)
+    {
+        let original = model.preferences.menuBarAppearance
+        defer {
+            model.preferences.menuBarAppearance = original
+            statusItem.refresh()
+        }
+
+        var variants: [(String, MenuBarAppearance)] = []
+        for scope in MenuBarBackingScope.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.backingScope = scope
+            variants.append(("scope=\(scope.rawValue)", appearance))
+        }
+        var greyscale = MenuBarAppearance.default
+        greyscale.markStyle = .greyscale
+        variants.append(("mark=greyscale", greyscale))
+
+        var custom = MenuBarAppearance.default
+        custom.backingScope = .markAndNumber
+        custom.backingColorStyle = .custom
+        custom.backingColorHex = "#3366FF"
+        custom.backingOpacity = 0.3
+        custom.textColorStyle = .white
+        custom.font = .rounded
+        variants.append(("custom", custom))
+
+        for (label, appearance) in variants {
+            model.preferences.menuBarAppearance = appearance
+            statusItem.refresh()
+            button.layoutSubtreeIfNeeded()
+
+            let mark = StatusItemController.markImage(in: button.attributedTitle)
+            let markInk = mark.map { inkCoverage(of: $0) }
+            let plate = button.layer?.backgroundColor
+            print(String(
+                format: "SELFTEST appearancesweep %@ mark=%@ markAvg=(%.2f,%.2f,%.2f) "
+                    + "layerAlpha=%.3f layerRadius=%.1f width=%.0f",
+                label,
+                mark == nil ? "MISSING" : "yes",
+                markInk?.average.red ?? 0, markInk?.average.green ?? 0,
+                markInk?.average.blue ?? 0,
+                plate?.alpha ?? 0,
+                button.layer?.cornerRadius ?? 0,
+                button.bounds.width))
+        }
+    }
+
+    private static func dumpMenuBarGapSweep(
+        button: NSStatusBarButton,
+        provider: String?,
+        appearance: MenuBarAppearance) {
         let original = button.attributedTitle
         defer {
             button.attributedTitle = original
@@ -263,10 +350,13 @@ enum SelfTest {
         var measurements: [String] = []
         var smallest = CGFloat.greatestFiniteMagnitude
         for dark in [false, true] {
-            let mark = ProviderMarkImage.menuBarImage(provider: provider, dark: dark)
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: provider, dark: dark, appearance: appearance)
             for value in [7.0, 44, 100] {
                 button.attributedTitle = StatusItemController.statusTitle(
-                    mark: mark, percent: StatusItemController.reservedPercent(value))
+                    mark: mark,
+                    percent: StatusItemController.reservedPercent(value),
+                    appearance: appearance)
                 button.layoutSubtreeIfNeeded()
                 let gap = measuredGap(of: button)
                 smallest = min(smallest, gap ?? smallest)

@@ -35,12 +35,56 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             imageSize: .zero, usedVendorMark: false)
     }
 
-    static let titleFont = NSFont.monospacedDigitSystemFont(
-        ofSize: NSFont.systemFontSize, weight: .regular)
+    /// The default face. Every choice is derived from it, so every readout keeps
+    /// the tabular figures the menu bar needs - AppKit draws this title and the
+    /// popover's own `.monospacedDigit()` never reaches it.
+    static let titleFont = font(for: .system)
+
+    /// The captain's chosen face, still with tabular figures. The design is
+    /// applied to the monospaced-digit system font and the figure-spacing
+    /// feature is re-stated on the result, because a design substitution can
+    /// otherwise drop it and let a 1 come out narrower than a 4.
+    static func font(for choice: MenuBarFontChoice) -> NSFont {
+        let base = NSFont.monospacedDigitSystemFont(
+            ofSize: NSFont.systemFontSize, weight: .regular)
+        let tabular: [[NSFontDescriptor.FeatureKey: Int]] = [[
+            .typeIdentifier: kNumberSpacingType,
+            .selectorIdentifier: kMonospacedNumbersSelector,
+        ]]
+
+        var descriptor = base.fontDescriptor
+        if let design = choice.systemDesign, let designed = descriptor.withDesign(design) {
+            descriptor = designed
+        }
+        descriptor = descriptor.addingAttributes([.featureSettings: tabular])
+        return NSFont(descriptor: descriptor, size: NSFont.systemFontSize) ?? base
+    }
+
+    /// The plate that covers the mark and the number together, or `nil` for
+    /// every other backing scope.
+    ///
+    /// It is the status item button's own layer background, not a sublayer and
+    /// not an image. A sublayer would draw on top of the title AppKit renders
+    /// into the layer's contents, and no image can reach behind text the button
+    /// lays out itself; a layer background is the one plate that lands
+    /// underneath both.
+    static func wholeItemPlate(
+        appearance: MenuBarAppearance, dark: Bool) -> (color: NSColor, cornerRadius: CGFloat)?
+    {
+        guard let backing = appearance.wholeItemBacking(dark: dark) else { return nil }
+        return (
+            NSColor(backing.color).withAlphaComponent(backing.opacity),
+            ProviderMarkImage.menuBarSide * ProviderMarkImage.backingCornerFraction)
+    }
 
     /// The mark and its number as one attributed string, with the gap between
     /// them set explicitly rather than left to AppKit.
-    static func statusTitle(mark: NSImage, percent: String) -> NSAttributedString {
+    static func statusTitle(
+        mark: NSImage,
+        percent: String,
+        appearance: MenuBarAppearance = .default) -> NSAttributedString
+    {
+        let titleFont = font(for: appearance.font)
         let attachment = NSTextAttachment()
         attachment.image = mark
         let side = ProviderMarkImage.menuBarSide
@@ -64,7 +108,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let numberStart = title.length
         title.append(NSAttributedString(string: percent, attributes: [
             .font: titleFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: appearance.textColor().map { NSColor($0) } ?? NSColor.labelColor,
         ]))
         if percent == reservedUnknown() {
             let knownWidth = ("100%" as NSString).size(withAttributes: [.font: titleFont]).width
@@ -76,7 +120,32 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 .kern, value: (knownWidth - unknownWidth) / CGFloat(gaps),
                 range: NSRange(location: numberStart, length: percent.count))
         }
+        correctReservedPadding(in: title, from: numberStart, font: titleFont)
         return title
+    }
+
+    /// FIGURE SPACE is exactly one digit wide in most faces, which is the whole
+    /// reason `reservedPercent` pads with it - but "most" is not "every". The
+    /// serif face draws it narrower than a digit, so a 9% item came out narrower
+    /// than a 100% one and the menu bar moved as the quota fell. Measuring the
+    /// two in the chosen face and kerning away the difference makes the reserved
+    /// column hold in any face.
+    private static func correctReservedPadding(
+        in title: NSMutableAttributedString, from start: Int, font: NSFont)
+    {
+        let padding = "\u{2007}"
+        let text = title.string as NSString
+        let range = NSRange(location: start, length: title.length - start)
+        let first = text.range(of: padding, options: [], range: range)
+        guard first.location != NSNotFound else { return }
+        let padded = NSRange(location: first.location, length: title.length - first.location)
+
+        func width(_ string: String) -> CGFloat {
+            (string as NSString).size(withAttributes: [.font: font]).width
+        }
+        let shortfall = width("0") - width(padding)
+        guard abs(shortfall) > 0.01 else { return }
+        title.addAttribute(.kern, value: shortfall, range: padded)
     }
 
     init(model: AppModel) {
@@ -144,15 +213,20 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         guard let button = statusItem.button else { return }
 
         let readout = model.menuBarReadout
+        let appearance = model.preferences.menuBarAppearance
         let dark = Self.isDark(button.effectiveAppearance)
-        let image = ProviderMarkImage.menuBarImage(provider: readout.provider, dark: dark)
+        let image = ProviderMarkImage.menuBarImage(
+            provider: readout.provider, dark: dark, appearance: appearance)
 
         let title = readout.percentRemaining.map { Self.reservedPercent($0) }
             ?? (readout.provider == nil ? "" : Self.reservedUnknown())
 
         button.image = nil
         button.imagePosition = .noImage
-        button.attributedTitle = Self.statusTitle(mark: image, percent: title)
+        button.font = Self.font(for: appearance.font)
+        button.attributedTitle = Self.statusTitle(
+            mark: image, percent: title, appearance: appearance)
+        applyWholeItemPlate(to: button, appearance: appearance, dark: dark)
         button.toolTip = readout.accessibilityDescription
         button.setAccessibilityLabel(readout.accessibilityDescription)
 
@@ -163,6 +237,19 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             imageIsTemplate: Self.markImage(in: button.attributedTitle)?.isTemplate ?? false,
             imageSize: Self.markImage(in: button.attributedTitle)?.size ?? .zero,
             usedVendorMark: readout.provider.map { ProviderMarkImage.hasVendorMark(for: $0) } ?? false)
+    }
+
+    private func applyWholeItemPlate(
+        to button: NSStatusBarButton, appearance: MenuBarAppearance, dark: Bool)
+    {
+        button.wantsLayer = true
+        guard let plate = Self.wholeItemPlate(appearance: appearance, dark: dark) else {
+            button.layer?.backgroundColor = NSColor.clear.cgColor
+            button.layer?.cornerRadius = 0
+            return
+        }
+        button.layer?.backgroundColor = plate.color.cgColor
+        button.layer?.cornerRadius = plate.cornerRadius
     }
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
@@ -367,5 +454,18 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             from, immediate, settled,
             animated ? "animated" : "instant",
             abs(from - settled) > 1 ? "yes" : "no")
+    }
+}
+
+extension MenuBarFontChoice {
+    /// The system font design behind each choice. `nil` is the system face
+    /// itself, which needs no substitution.
+    var systemDesign: NSFontDescriptor.SystemDesign? {
+        switch self {
+        case .system: nil
+        case .rounded: .rounded
+        case .monospaced: .monospaced
+        case .serif: .serif
+        }
     }
 }

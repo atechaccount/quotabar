@@ -20,6 +20,14 @@ final class AppPreferences: ObservableObject {
         static let readOnly = "readOnlyRefresh"
         static let hiddenProviders = "hiddenProviders"
         static let didSeedVisibility = "didSeedProviderVisibility"
+        static let backingScope = "menuBarBackingScope"
+        static let markStyle = "menuBarMarkStyle"
+        static let backingColorStyle = "menuBarBackingColorStyle"
+        static let backingColorHex = "menuBarBackingColorHex"
+        static let backingOpacity = "menuBarBackingOpacity"
+        static let textColorStyle = "menuBarTextColorStyle"
+        static let textColorHex = "menuBarTextColorHex"
+        static let readoutFont = "menuBarReadoutFont"
     }
 
     private let defaults: PreferenceStore
@@ -41,6 +49,13 @@ final class AppPreferences: ObservableObject {
 
     @Published var readOnlyRefresh: Bool {
         didSet { defaults.set(readOnlyRefresh, forKey: Key.readOnly) }
+    }
+
+    /// How the menu bar item is drawn. Written field by field rather than as one
+    /// archived blob, so a stored appearance stays readable and each setting can
+    /// fall back to its default on its own.
+    @Published var menuBarAppearance: MenuBarAppearance {
+        didSet { write(menuBarAppearance) }
     }
 
     @Published private(set) var hiddenProviders: Set<String> {
@@ -67,6 +82,41 @@ final class AppPreferences: ObservableObject {
         hiddenProviders = Set(defaults.stringArray(forKey: Key.hiddenProviders) ?? [])
         didSeedFocus = defaults.bool(forKey: Key.didSeedFocus)
         didSeedVisibility = defaults.bool(forKey: Key.didSeedVisibility)
+        menuBarAppearance = Self.readAppearance(from: defaults)
+    }
+
+    // MARK: - Menu bar appearance
+
+    private static func readAppearance(from defaults: PreferenceStore) -> MenuBarAppearance {
+        let fallback = MenuBarAppearance.default
+        func choice<T: RawRepresentable>(_ key: String, _ fallback: T) -> T
+        where T.RawValue == String {
+            T(rawValue: defaults.string(forKey: key) ?? "") ?? fallback
+        }
+
+        return MenuBarAppearance(
+            backingScope: choice(Key.backingScope, fallback.backingScope),
+            markStyle: choice(Key.markStyle, fallback.markStyle),
+            backingColorStyle: choice(Key.backingColorStyle, fallback.backingColorStyle),
+            backingColorHex: defaults.string(forKey: Key.backingColorHex)
+                ?? fallback.backingColorHex,
+            backingOpacity: defaults.object(forKey: Key.backingOpacity) == nil
+                ? fallback.backingOpacity
+                : defaults.double(forKey: Key.backingOpacity),
+            textColorStyle: choice(Key.textColorStyle, fallback.textColorStyle),
+            textColorHex: defaults.string(forKey: Key.textColorHex) ?? fallback.textColorHex,
+            font: choice(Key.readoutFont, fallback.font))
+    }
+
+    private func write(_ appearance: MenuBarAppearance) {
+        defaults.set(appearance.backingScope.rawValue, forKey: Key.backingScope)
+        defaults.set(appearance.markStyle.rawValue, forKey: Key.markStyle)
+        defaults.set(appearance.backingColorStyle.rawValue, forKey: Key.backingColorStyle)
+        defaults.set(appearance.backingColorHex, forKey: Key.backingColorHex)
+        defaults.set(appearance.backingOpacity, forKey: Key.backingOpacity)
+        defaults.set(appearance.textColorStyle.rawValue, forKey: Key.textColorStyle)
+        defaults.set(appearance.textColorHex, forKey: Key.textColorHex)
+        defaults.set(appearance.font.rawValue, forKey: Key.readoutFont)
     }
 
     /// Picks the initial focus from the first real snapshot, once. After that the

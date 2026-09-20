@@ -53,15 +53,27 @@ The menu bar item is a plain AppKit `NSStatusItem`. Its button gets a real `NSIm
 
 This is deliberate and load-bearing. QuotaBar previously used SwiftUI's `MenuBarExtra` with a custom `Shape` in its label; the status item host keeps the `Text` from such a label and silently drops the shape, so the menu bar showed a bare percentage with no mark at all. `StatusItemController` owns the status item, re-renders on every model change and on every appearance change, and `SelfTest` rasterises the live button to prove the mark is actually drawn.
 
-The mark sits on a very faint rounded plate - a little white on a dark menu bar, a little black on a light one - so a colored mark stays legible when a bright or busy wallpaper shows through a translucent menu bar. The strength is `ProviderMarkImage.backingOpacityOnDark` / `backingOpacityOnLight`. It is meant to read as the background settling slightly, never as a button.
+The mark sits on a very faint rounded plate - by default a little white on a dark menu bar, a little black on a light one - so a colored mark stays legible when a bright or busy wallpaper shows through a translucent menu bar. It is meant to read as the background settling slightly, never as a button. What it covers, what colour it is and how strong it is are all settings; see below.
 
-The title uses tabular figures and is padded to three digit widths with `U+2007 FIGURE SPACE` on the **trailing** edge, so the item keeps one width from 0% to 100% and nothing to its left in the menu bar shuffles as the quota falls.
+The title uses tabular figures and is padded to three digit widths with `U+2007 FIGURE SPACE` on the **trailing** edge, so the item keeps one width from 0% to 100% and nothing to its left in the menu bar shuffles as the quota falls. FIGURE SPACE is one digit wide in most faces but not in every one - the serif face draws it narrower - so `statusTitle` measures both in the chosen face and kerns away the difference.
 
 The mark travels inside the attributed title as a text attachment rather than in `button.image`. That is not decoration: `button.image` plus `button.title` puts a fixed ~15pt of AppKit spacing between the two, and none of `imagePosition` or `imageHugsTitle` shifts it - all four combinations measure at exactly 15.0pt. As an attachment the gap becomes a typographic one, set by `ProviderMarkImage.menuBarGap`, and measures 1.0-5.0pt depending on appearance and digit. `QUOTABAR_SELFTEST` sweeps every digit count in both appearances and reports the smallest, which must never reach zero.
 
 - **Focused provider** (the default) shows one chosen provider and its session percentage.
 - **Lowest of shown** shows whichever visible provider has the least left. This is available but is deliberately not the default, because the lowest number anywhere is rarely the one you are working against.
 - **Icon only** shows the app mark alone.
+
+### Appearance settings
+
+How the item is drawn is under Preferences > Menu bar appearance, and every default is the presentation QuotaBar shipped with, so an untouched install is unchanged. The decisions live in `MenuBarAppearance` in `QuotaBarCore`, away from AppKit, because they are the part worth testing; `ProviderMarkImage` and `StatusItemController` only carry the answers to the drawing calls.
+
+- **Icon** - the provider mark in its brand colour, or greyscale. Greyscale takes the hue out by luma and then clears the same contrast floor the brand colours do, so a drained mark never disappears into the menu bar.
+- **Backing** - none, behind the icon, or behind the icon and number together. The icon-only plate is drawn into the mark image. The wide one is the status item button's own **layer background**: a sublayer would draw on top of the title AppKit renders into the layer's contents, and no image can reach behind text the button lays out itself. Whichever scope is chosen, the mark keeps one size.
+- **Backing colour** - match the menu bar, or a colour and strength of your own. Anything much past a tenth reads as a badge.
+- **Number colour** - match the menu bar (the system label colour), white, black, or a colour of your own.
+- **Readout font** - system, rounded, monospaced or serif. Each is a system font *design* applied to the monospaced-digit system font with the tabular-figure feature re-stated on the result, so every face keeps its digits one width.
+
+`QUOTABAR_SELFTEST` puts each option through the real status item and prints `SELFTEST appearancesweep` lines with the drawn mark's average colour, the button layer's plate alpha and corner radius, and the item's width, then restores the settings it borrowed.
 
 ### The sticky selection
 

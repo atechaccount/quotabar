@@ -19,6 +19,9 @@ enum ProviderMarkImage {
         let dark: Bool
         let side: CGFloat
         let backingOpacity: Double
+        let backingColor: String
+        let greyscale: Bool
+        let insetMark: Bool
     }
 
     private static var cache: [CacheKey: NSImage] = [:]
@@ -37,46 +40,68 @@ enum ProviderMarkImage {
     /// touch at any percentage width.
     static let menuBarGap: CGFloat = 1.5
 
-    /// Deliberately faint. The backing exists to keep a colored mark legible
-    /// when a bright or busy wallpaper shows through a translucent menu bar,
-    /// not to draw a button in the menu bar. Anything stronger than this reads
-    /// as a badge.
-    static let backingOpacityOnDark: Double = 0.11
-    static let backingOpacityOnLight: Double = 0.07
+    /// The corner radius of a plate, as a fraction of its shorter side. Shared
+    /// with the plate the status item draws behind mark and number together, so
+    /// the two backing scopes are the same shape.
+    static let backingCornerFraction: CGFloat = 0.28
 
     /// The provider's mark in its readable brand color, or QuotaBar's own glyph
     /// when there is no provider or no mark for it. Never returns another
     /// provider's artwork as a stand-in.
-    /// `backingOpacity: 0` means no plate at all, which is what everything
-    /// inside the dropdown uses.
+    /// `backing: nil` means no plate at all, which is what everything inside the
+    /// dropdown uses. `insetMark` keeps the mark at its plated size even when no
+    /// plate is drawn, so the menu bar mark does not change size as the backing
+    /// scope changes.
     static func image(
         provider: String?,
         dark: Bool,
         side: CGFloat,
-        backingOpacity: Double = 0) -> NSImage
+        backing: (color: BrandRGB, opacity: Double)? = nil,
+        markStyle: MenuBarMarkStyle = .color,
+        insetMark: Bool = false) -> NSImage
     {
         let key = CacheKey(
-            provider: provider ?? "", dark: dark, side: side, backingOpacity: backingOpacity)
+            provider: provider ?? "",
+            dark: dark,
+            side: side,
+            backingOpacity: backing?.opacity ?? 0,
+            backingColor: backing.map { BrandColors.hex(from: $0.color) } ?? "",
+            greyscale: markStyle == .greyscale,
+            insetMark: insetMark)
         if let cached = cache[key] { return cached }
 
         let made = render(
-            provider: provider, dark: dark, side: side, backingOpacity: backingOpacity)
+            provider: provider,
+            dark: dark,
+            side: side,
+            backing: backing,
+            markStyle: markStyle,
+            insetMark: insetMark)
         cache[key] = made
         return made
     }
 
     static func defaultBackingOpacity(dark: Bool) -> Double {
-        dark ? backingOpacityOnDark : backingOpacityOnLight
+        dark ? MenuBarAppearance.automaticOpacityOnDark : MenuBarAppearance.automaticOpacityOnLight
     }
 
-    /// The menu bar image: the mark on its faint backing plate, ready for
-    /// `NSStatusItem.button.image`.
-    static func menuBarImage(provider: String?, dark: Bool) -> NSImage {
+    /// The menu bar image for the captain's chosen appearance: the mark, in
+    /// colour or greyscale, on its plate when the backing sits behind the icon
+    /// alone. The plate that covers icon and number together is not an image -
+    /// `StatusItemController` draws that one under the whole item.
+    static func menuBarImage(
+        provider: String?,
+        dark: Bool,
+        appearance: MenuBarAppearance = .default) -> NSImage
+    {
         image(
             provider: provider,
             dark: dark,
             side: menuBarSide,
-            backingOpacity: defaultBackingOpacity(dark: dark))
+            backing: appearance.markBacking(dark: dark),
+            markStyle: appearance.markStyle,
+            // Always inset: the mark keeps one size whether or not it is plated.
+            insetMark: true)
     }
 
     /// Whether a real vendor mark exists and loaded. The self-test asserts this
@@ -145,26 +170,30 @@ enum ProviderMarkImage {
         provider: String?,
         dark: Bool,
         side: CGFloat,
-        backingOpacity: Double) -> NSImage
+        backing: (color: BrandRGB, opacity: Double)?,
+        markStyle: MenuBarMarkStyle,
+        insetMark: Bool) -> NSImage
     {
         let size = NSSize(width: side, height: side)
-        let backing = backingOpacity > 0
-        let markSide = backing ? side - backingInset * 2 : side
+        let inset = insetMark || backing != nil
+        let markSide = inset ? side - backingInset * 2 : side
 
         guard let provider,
               let url = markURL(for: provider),
               let base = NSImage(contentsOf: url)
         else {
-            return appGlyph(side: side, dark: dark, backingOpacity: backingOpacity)
+            return appGlyph(side: side, dark: dark, backing: backing, insetMark: insetMark)
         }
 
         base.size = NSSize(width: markSide, height: markSide)
-        let tint = NSColor(BrandColors.readableColor(for: provider, darkAppearance: dark))
+        var appearance = MenuBarAppearance.default
+        appearance.markStyle = markStyle
+        let tint = NSColor(appearance.markColor(for: provider, dark: dark))
 
         let composed = NSImage(size: size, flipped: false) { rect in
-            drawBacking(in: rect, dark: dark, opacity: backingOpacity)
+            drawBacking(in: rect, backing: backing)
 
-            let markRect = backing ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
+            let markRect = inset ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
             // The mark is drawn into its own layer so the `.sourceAtop` recolor
             // cannot bleed onto the backing plate underneath it.
             NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -184,29 +213,33 @@ enum ProviderMarkImage {
     /// A faint rounded plate in the menu bar's own contrast direction: a touch
     /// of white on a dark menu bar, a touch of black on a light one. It reads as
     /// a slight settling of the background, not as a control.
-    private static func drawBacking(in rect: NSRect, dark: Bool, opacity: Double) {
-        guard opacity > 0 else { return }
-        let ink = dark ? NSColor.white : NSColor.black
-        ink.withAlphaComponent(opacity).setFill()
+    private static func drawBacking(in rect: NSRect, backing: (color: BrandRGB, opacity: Double)?) {
+        guard let backing, backing.opacity > 0 else { return }
+        NSColor(backing.color).withAlphaComponent(backing.opacity).setFill()
         NSBezierPath(
             roundedRect: rect,
-            xRadius: rect.width * 0.28,
-            yRadius: rect.height * 0.28).fill()
+            xRadius: rect.width * backingCornerFraction,
+            yRadius: rect.height * backingCornerFraction).fill()
     }
 
     /// QuotaBar's own mark: three rising bars. Shown only when no provider is
     /// focused, which is also what the menu bar shows before the first choice.
-    static func appGlyph(side: CGFloat, dark: Bool, backingOpacity: Double = 0) -> NSImage {
+    static func appGlyph(
+        side: CGFloat,
+        dark: Bool,
+        backing: (color: BrandRGB, opacity: Double)? = nil,
+        insetMark: Bool = false) -> NSImage
+    {
         let size = NSSize(width: side, height: side)
-        let backing = backingOpacity > 0
+        let inset = insetMark || backing != nil
         let ink = dark
             ? NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)
             : NSColor(srgbRed: 0.12, green: 0.12, blue: 0.13, alpha: 1)
 
         let image = NSImage(size: size, flipped: false) { rect in
-            drawBacking(in: rect, dark: dark, opacity: backingOpacity)
+            drawBacking(in: rect, backing: backing)
 
-            let box = backing ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
+            let box = inset ? rect.insetBy(dx: backingInset, dy: backingInset) : rect
             let width = max(2, box.width / 5)
             let gap = (box.width - width * 3) / 2
             let heights = [box.height * 0.45, box.height * 0.72, box.height]

@@ -118,6 +118,9 @@ struct PreferencesView: View {
                     }
                 }
 
+                SectionTitle("Menu bar appearance")
+                appearanceCard
+
                 SectionTitle("Providers shown in the top switcher and Overview")
                 providerCard
                 Text("On first launch QuotaBar shows a provider only when quota-axi reports "
@@ -132,6 +135,147 @@ struct PreferencesView: View {
                 legend
             }
             .padding(18)
+    }
+
+    /// Everything about how the item is drawn, in the order the eye reads it:
+    /// the mark, then what sits behind it, then the number.
+    private var appearanceCard: some View {
+        Card {
+            PreferenceRow(
+                title: "Icon",
+                note: "The provider mark in its brand colour, or drained of hue.")
+            {
+                Picker("", selection: $preferences.menuBarAppearance.markStyle) {
+                    ForEach(MenuBarMarkStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            Divider()
+            PreferenceRow(
+                title: "Backing",
+                note: "A faint plate keeps the item legible when a bright wallpaper shows "
+                    + "through the menu bar. Choose what it covers.")
+            {
+                Picker("", selection: $preferences.menuBarAppearance.backingScope) {
+                    ForEach(MenuBarBackingScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            if preferences.menuBarAppearance.backingScope != .none {
+                Divider()
+                PreferenceRow(
+                    title: "Backing colour",
+                    note: "Matching the menu bar means a touch of white on a dark menu bar and "
+                        + "a touch of black on a light one.")
+                {
+                    Picker("", selection: $preferences.menuBarAppearance.backingColorStyle) {
+                        ForEach(MenuBarBackingColorStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                if preferences.menuBarAppearance.backingColorStyle == .custom {
+                    Divider()
+                    PreferenceRow(
+                        title: "Backing colour and strength",
+                        note: "Anything much stronger than a tenth reads as a badge in the "
+                            + "menu bar rather than as a backing.")
+                    {
+                        HStack(spacing: 10) {
+                            ColorPicker(
+                                "",
+                                selection: hexBinding(
+                                    \.backingColorHex,
+                                    fallback: MenuBarAppearance.defaultCustomBackingHex),
+                                supportsOpacity: false)
+                                .labelsHidden()
+                            Slider(
+                                value: $preferences.menuBarAppearance.backingOpacity,
+                                in: MenuBarAppearance.opacityRange)
+                                .frame(width: 110)
+                            Text(strengthLabel)
+                                .font(Typography.font(10))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 30, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+            PreferenceRow(
+                title: "Number colour",
+                note: "Matching the menu bar follows the system label colour as the "
+                    + "appearance changes.")
+            {
+                Picker("", selection: $preferences.menuBarAppearance.textColorStyle) {
+                    ForEach(MenuBarTextColorStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            if preferences.menuBarAppearance.textColorStyle == .custom {
+                Divider()
+                PreferenceRow(
+                    title: "Custom number colour",
+                    note: "Used in both appearances, so pick one that reads on each.")
+                {
+                    ColorPicker(
+                        "",
+                        selection: hexBinding(
+                            \.textColorHex, fallback: MenuBarAppearance.defaultCustomTextHex),
+                        supportsOpacity: false)
+                        .labelsHidden()
+                }
+            }
+
+            Divider()
+            PreferenceRow(
+                title: "Readout font",
+                note: "Every face keeps tabular figures, so the item never changes width as "
+                    + "the number changes.")
+            {
+                Picker("", selection: $preferences.menuBarAppearance.font) {
+                    ForEach(MenuBarFontChoice.allCases) { choice in
+                        Text(choice.title).tag(choice)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+    }
+
+    private var strengthLabel: String {
+        String(format: "%.0f%%", preferences.menuBarAppearance.backingOpacity * 100)
+    }
+
+    /// The colour wells work in `Color`; the settings store hex, which is the
+    /// form every other colour in QuotaBar is written in.
+    private func hexBinding(
+        _ path: WritableKeyPath<MenuBarAppearance, String>,
+        fallback: String) -> Binding<Color>
+    {
+        Binding(
+            get: { Color(brandHex: preferences.menuBarAppearance[keyPath: path]) },
+            set: { newValue in
+                let hex = BrandColors.hex(from: newValue.brandRGB)
+                preferences.menuBarAppearance[keyPath: path] = hex.isEmpty ? fallback : hex
+            })
     }
 
     @ViewBuilder

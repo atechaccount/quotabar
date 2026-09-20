@@ -83,6 +83,22 @@ public enum BrandColors {
             blue: Double(value & 0xff) / 255)
     }
 
+    public static func hex(from color: BrandRGB) -> String {
+        func channel(_ value: Double) -> Int {
+            Int((min(max(value, 0), 1) * 255).rounded())
+        }
+        return String(
+            format: "#%02X%02X%02X", channel(color.red), channel(color.green), channel(color.blue))
+    }
+
+    /// The same colour with the hue taken out, weighted the way the eye weighs
+    /// the channels, so a mark keeps the tonal weight it had rather than turning
+    /// into a flat mid grey.
+    public static func greyscale(_ color: BrandRGB) -> BrandRGB {
+        let luma = 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue
+        return BrandRGB(red: luma, green: luma, blue: luma)
+    }
+
     public static func relativeLuminance(_ color: BrandRGB) -> Double {
         func channel(_ value: Double) -> Double {
             value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)

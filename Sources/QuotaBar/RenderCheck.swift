@@ -199,11 +199,15 @@ enum RenderCheck {
 
                     let opacity = strength.value
                         ?? ProviderMarkImage.defaultBackingOpacity(dark: backdrop.dark)
+                    let ink: BrandRGB = backdrop.dark
+                        ? BrandRGB(red: 1, green: 1, blue: 1)
+                        : BrandRGB(red: 0, green: 0, blue: 0)
                     let mark = ProviderMarkImage.image(
                         provider: "claude",
                         dark: backdrop.dark,
                         side: ProviderMarkImage.menuBarSide,
-                        backingOpacity: opacity)
+                        backing: opacity > 0 ? (ink, opacity) : nil,
+                        insetMark: true)
                     let side = ProviderMarkImage.menuBarSide
                     mark.draw(in: NSRect(
                         x: cell.midX - side / 2 - 14,
