@@ -90,28 +90,104 @@ struct MenuBarAppearanceTests {
         #expect(appearance.textColor() == nil)
     }
 
-    /// Greyscale takes the hue out and nothing else: the mark keeps the tonal
-    /// weight it had, and it still has to clear the contrast floor against the
-    /// menu bar it is drawn on.
+    /// Black and white are exactly that, for every provider and in both
+    /// appearances. No contrast nudge, no desaturated brand colour: a flat ink.
     @Test
-    func greyscaleDrainsTheHueAndStaysReadable() {
-        var appearance = MenuBarAppearance.default
-        appearance.markStyle = .greyscale
-
-        for provider in BrandColors.brands.keys.sorted() {
-            for dark in [false, true] {
-                let grey = appearance.markColor(for: provider, dark: dark)
-                #expect(
-                    abs(grey.red - grey.green) < 0.001 && abs(grey.green - grey.blue) < 0.001,
-                    "\(provider) dark=\(dark) kept a hue: \(grey)")
-
-                let background = dark ? BrandColors.darkBackground : BrandColors.lightBackground
-                #expect(
-                    BrandColors.contrastRatio(grey, background)
-                        >= BrandColors.minimumContrastRatio - 0.001,
-                    "\(provider) dark=\(dark) greyscale is unreadable on the menu bar")
+    func blackAndWhiteAreFlatInks() {
+        for (style, expected) in [
+            (MenuBarMarkStyle.black, BrandRGB(red: 0, green: 0, blue: 0)),
+            (MenuBarMarkStyle.white, BrandRGB(red: 1, green: 1, blue: 1)),
+        ] {
+            var appearance = MenuBarAppearance.default
+            appearance.markStyle = style
+            for provider in BrandColors.brands.keys.sorted() {
+                for dark in [false, true] {
+                    #expect(
+                        appearance.markColor(for: provider, dark: dark) == expected,
+                        "\(provider) dark=\(dark) \(style.rawValue) was not the flat ink")
+                }
             }
         }
+    }
+
+    /// The retired greyscale setting resolved to a light grey on a dark menu
+    /// bar and a dark grey on a light one, so it migrates to the flat ink that
+    /// matches what the captain was looking at - never back to the default.
+    @Test
+    func theRetiredGreyscaleSettingMigratesToTheInkItLookedLike() {
+        #expect(MenuBarMarkStyle.stored("greyscale", dark: true) == .white)
+        #expect(MenuBarMarkStyle.stored("greyscale", dark: false) == .black)
+    }
+
+    @Test
+    func aStoredMarkStyleIsReadBackAndAnUnknownOneFallsBackToTheBrandColour() {
+        for style in MenuBarMarkStyle.allCases {
+            #expect(MenuBarMarkStyle.stored(style.rawValue, dark: true) == style)
+            #expect(MenuBarMarkStyle.stored(style.rawValue, dark: false) == style)
+        }
+        #expect(MenuBarMarkStyle.stored(nil, dark: true) == .color)
+        #expect(MenuBarMarkStyle.stored("chartreuse", dark: true) == .color)
+    }
+
+    /// The item says the panel is open in its own plate, because macOS does
+    /// not: the system highlight is drawn while the mouse is down and is gone
+    /// by the time the panel is up.
+    @Test
+    func theOpenPlateIsAlwaysDrawnAndAlwaysStrongerThanTheBacking() {
+        for scope in MenuBarBackingScope.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.backingScope = scope
+            for dark in [false, true] {
+                let open = appearance.itemPlate(dark: dark, open: true)
+                #expect(open != nil, "\(scope) dark=\(dark) had no open indication")
+
+                let shut = appearance.itemPlate(dark: dark, open: false)
+                #expect(shut?.opacity ?? 0 < open?.opacity ?? 0,
+                        "\(scope) dark=\(dark) the open plate was not the stronger one")
+            }
+        }
+    }
+
+    @Test
+    func theShutPlateIsExactlyTheBacking() {
+        for scope in MenuBarBackingScope.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.backingScope = scope
+            for dark in [false, true] {
+                let plate = appearance.itemPlate(dark: dark, open: false)
+                let backing = appearance.wholeItemBacking(dark: dark)
+                #expect(plate?.color == backing?.color)
+                #expect(plate?.opacity == backing?.opacity)
+            }
+        }
+    }
+
+    /// The open plate is composited over the backing, so a custom backing
+    /// colour is still visible through it rather than being replaced.
+    @Test
+    func theOpenPlateKeepsTheCustomBackingUnderneath() {
+        var appearance = MenuBarAppearance.default
+        appearance.backingScope = .markAndNumber
+        appearance.backingColorStyle = .custom
+        appearance.backingColorHex = "#3366FF"
+        appearance.backingOpacity = 0.4
+
+        let blue = BrandColors.rgb(fromHex: "#3366FF")
+        let open = appearance.itemPlate(dark: true, open: true)
+        #expect(open != nil)
+        // White over blue: lighter than the blue, but still bluer than white.
+        #expect(open!.color.blue > open!.color.red)
+        #expect(open!.color.red > blue.red)
+        #expect(open!.opacity > 0.4)
+    }
+
+    @Test
+    func compositingAnOpaqueTopHidesWhatIsUnderIt() {
+        let result = MenuBarAppearance.compositing(
+            (BrandRGB(red: 1, green: 0, blue: 0), 1),
+            over: (BrandRGB(red: 0, green: 0, blue: 1), 0.5))
+        #expect(result.opacity == 1)
+        #expect(result.color == BrandRGB(red: 1, green: 0, blue: 0))
     }
 
     @Test

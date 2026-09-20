@@ -18,6 +18,24 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private var appearanceObservation: NSKeyValueObservation?
 
+    /// The plate under the whole item. It is a sibling layer behind the
+    /// button's own, not the button layer's background.
+    ///
+    /// The background was what it used to be, and it could only ever fill the
+    /// button's bounds - AppKit's padding included - so the plate could not be
+    /// brought in to hug the readout. A sublayer of the *button* is no good
+    /// either: the button draws its title into its layer's contents and
+    /// sublayers composite above that, so the plate would cover the number.
+    /// The button's superview is layer-backed and draws nothing of its own, so
+    /// a layer inserted below the button's layer there lands underneath both
+    /// the mark and the digits and can be any size it likes.
+    private let plateLayer = CALayer()
+
+    /// Whether the panel is up. The item says so, because macOS does not: the
+    /// system's own highlight is drawn while the mouse is down and is gone by
+    /// the time the panel is on screen.
+    private var isPanelOpen = false
+
     /// What was last pushed into the button. The self-test reads this to compare
     /// the model's intent against what the status item actually received.
     private(set) var rendered = RenderedStatusItem.empty
@@ -61,21 +79,44 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         return NSFont(descriptor: descriptor, size: MenuBarMetrics.titleSize) ?? base
     }
 
-    /// The plate that covers the mark and the number together, or `nil` for
-    /// every other backing scope.
+    /// The one plate drawn under the whole item: the backing that covers mark
+    /// and number together, the indication that the panel is open, or the two
+    /// composited. `nil` means no plate at all.
     ///
-    /// It is the status item button's own layer background, not a sublayer and
-    /// not an image. A sublayer would draw on top of the title AppKit renders
-    /// into the layer's contents, and no image can reach behind text the button
-    /// lays out itself; a layer background is the one plate that lands
-    /// underneath both.
+    /// The colour decision is `MenuBarAppearance.itemPlate`; this only turns it
+    /// into AppKit's types and adds the shared corner radius.
     static func wholeItemPlate(
-        appearance: MenuBarAppearance, dark: Bool) -> (color: NSColor, cornerRadius: CGFloat)?
+        appearance: MenuBarAppearance,
+        dark: Bool,
+        open: Bool = false) -> (color: NSColor, cornerRadius: CGFloat)?
     {
-        guard let backing = appearance.wholeItemBacking(dark: dark) else { return nil }
+        guard let plate = appearance.itemPlate(dark: dark, open: open) else { return nil }
         return (
-            NSColor(backing.color).withAlphaComponent(backing.opacity),
+            NSColor(plate.color).withAlphaComponent(plate.opacity),
             ProviderMarkImage.menuBarSide * ProviderMarkImage.backingCornerFraction)
+    }
+
+    /// Where that plate goes inside the button: hard against the title, with
+    /// `MenuBarMetrics.plateHugFraction` of the mark's side either side of it.
+    ///
+    /// Not the button's bounds. A variable-length status item is about 10pt
+    /// wider than its own title on each side - AppKit's padding, not ours - and
+    /// a plate filling the bounds framed the readout instead of backing it.
+    /// What it hugs is the title's measured width, which is the reserved
+    /// three-digit column and therefore the same at 4% as at 100%, so the plate
+    /// keeps one width as the quota falls.
+    /// Takes an `NSButton` rather than the status one so the tests can measure
+    /// it without a menu bar.
+    static func wholeItemPlateFrame(in button: NSButton) -> NSRect {
+        let bounds = button.bounds
+        let hug = ProviderMarkImage.menuBarSide * MenuBarMetrics.plateHugFraction
+        let titleWidth = button.attributedTitle.size().width
+        guard titleWidth > 0, titleWidth + hug * 2 < bounds.width else { return bounds }
+        return NSRect(
+            x: ((bounds.width - titleWidth) / 2 - hug).rounded(),
+            y: bounds.minY,
+            width: (titleWidth + hug * 2).rounded(),
+            height: bounds.height)
     }
 
     /// The mark and its number as one attributed string, with the gap between
@@ -251,6 +292,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.font = Self.font(for: appearance.font)
         button.attributedTitle = Self.statusTitle(
             mark: image, percent: title, appearance: appearance)
+        button.layoutSubtreeIfNeeded()
         applyWholeItemPlate(to: button, appearance: appearance, dark: dark)
         button.toolTip = readout.accessibilityDescription
         button.setAccessibilityLabel(readout.accessibilityDescription)
@@ -267,14 +309,36 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func applyWholeItemPlate(
         to button: NSStatusBarButton, appearance: MenuBarAppearance, dark: Bool)
     {
+        // Left over from when the plate was the button's own background. It has
+        // to be cleared, not just ignored, or an install that ran the old build
+        // keeps a full-width plate behind the hugging one.
         button.wantsLayer = true
-        guard let plate = Self.wholeItemPlate(appearance: appearance, dark: dark) else {
-            button.layer?.backgroundColor = NSColor.clear.cgColor
-            button.layer?.cornerRadius = 0
+        button.layer?.backgroundColor = NSColor.clear.cgColor
+        button.layer?.cornerRadius = 0
+
+        guard let host = button.superview, let hostLayer = host.layer else { return }
+        if plateLayer.superlayer !== hostLayer {
+            hostLayer.insertSublayer(plateLayer, at: 0)
+        }
+
+        guard let plate = Self.wholeItemPlate(
+            appearance: appearance, dark: dark, open: isPanelOpen)
+        else {
+            plateLayer.isHidden = true
             return
         }
-        button.layer?.backgroundColor = plate.color.cgColor
-        button.layer?.cornerRadius = plate.cornerRadius
+
+        // The plate follows the button's frame and must not animate: an implicit
+        // fade or slide as the number changes is exactly the movement the rest
+        // of this file exists to prevent.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        plateLayer.isHidden = false
+        plateLayer.frame = host.convert(Self.wholeItemPlateFrame(in: button), from: button)
+        plateLayer.backgroundColor = plate.color.cgColor
+        plateLayer.cornerRadius = plate.cornerRadius
+        plateLayer.cornerCurve = .continuous
+        CATransaction.commit()
     }
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
@@ -354,10 +418,36 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        setPanelOpen(true)
     }
 
     func closePopover() {
         popover.performClose(nil)
+    }
+
+    /// `NSPopoverDelegate`. The transient popover also closes by clicking away,
+    /// pressing Escape or opening another menu, and none of those come back
+    /// through `closePopover`, so the open state is taken from the popover
+    /// itself rather than from whoever asked it to shut.
+    func popoverDidClose(_ notification: Notification) {
+        setPanelOpen(false)
+    }
+
+    /// Puts the item into, or out of, its open state.
+    ///
+    /// Two things happen. QuotaBar's own plate comes up, which is the
+    /// indication that lasts. And the system's momentary highlight is cleared
+    /// if it is still set: AppKit draws that one while the mouse is down, in a
+    /// near-full-width pill whose colour, shape and inset no API exposes, and
+    /// leaving it to linger over a plate that hugs the readout is the mismatch
+    /// this avoids. Clearing it is the whole of the control there is - the
+    /// highlight is not drawn by anything in this process, which is why
+    /// `cacheDisplay` on the button cannot see it.
+    private func setPanelOpen(_ open: Bool) {
+        guard isPanelOpen != open else { return }
+        isPanelOpen = open
+        statusItem.button?.highlight(false)
+        refresh()
     }
 
     // MARK: - Evidence hooks
@@ -377,6 +467,97 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             }
         }
         return found
+    }
+
+    /// The plate as it actually landed, or `nil` when none is drawn. The
+    /// evidence hooks read this: the plate is a layer of its own now, so the
+    /// button's layer background - which used to be the plate - says nothing
+    /// about it.
+    var drawnPlate: (alpha: Double, cornerRadius: CGFloat, frame: NSRect)? {
+        guard !plateLayer.isHidden, let alpha = plateLayer.backgroundColor?.alpha, alpha > 0
+        else { return nil }
+        return (Double(alpha), plateLayer.cornerRadius, plateLayer.frame)
+    }
+
+    /// What the item is actually wearing while the panel is open, and what
+    /// macOS contributes to the picture.
+    ///
+    /// This is the hook that settles the question rather than assuming it. Two
+    /// facts it reports, both established by measurement:
+    ///
+    /// - The system's pressed highlight is not drawn by anything in this
+    ///   process. `highlight(true)` leaves a `cacheDisplay` of the button
+    ///   byte-identical while changing the pixels on screen, so no colour,
+    ///   shape or inset of it is QuotaBar's to set; the single bit
+    ///   `NSStatusBarButton.highlight(_:)` is the whole of the control.
+    /// - AppKit does not keep that highlight on for the life of an `NSPopover`.
+    ///   With the panel up, the cell reports itself unhighlighted, which is why
+    ///   the item needs an indication of its own.
+    ///
+    /// `cachedDelta` is the first of those, measured live: the mean channel
+    /// difference between the button's own drawing highlighted and not. Zero
+    /// means the highlight is entirely the system's.
+    func openStateReport() async -> String {
+        guard let button = statusItem.button else { return "button=MISSING" }
+
+        func plate() -> String {
+            let drawn = drawnPlate
+            return String(
+                format: "alpha=%.3f w=%.0f", drawn?.alpha ?? 0, drawn?.frame.width ?? 0)
+        }
+
+        // An earlier hook may still have a popover on the way out, and
+        // `performClose` does not land the delegate callback before this runs,
+        // so take the shut state from a settled item rather than a closing one.
+        closePopover()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        refresh()
+        let closed = plate()
+
+        let unhighlighted = buttonMean(button)
+        button.highlight(true)
+        button.display()
+        let highlighted = buttonMean(button)
+        button.highlight(false)
+        button.display()
+
+        showPopover()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let open = plate()
+        let cellWhileOpen = button.cell?.isHighlighted ?? false
+        closePopover()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let reclosed = plate()
+
+        return String(
+            format: "closed[%@] open[%@] reclosed[%@] restored=%@ "
+                + "systemHighlightInAppDrawing=%.4f cellHighlightedWhilePanelOpen=%@",
+            closed, open, reclosed,
+            closed == reclosed ? "yes" : "NO",
+            abs(highlighted - unhighlighted),
+            cellWhileOpen ? "yes" : "no")
+    }
+
+    /// The mean channel value of the button's own drawing. Used only to show
+    /// that the system highlight never appears in it.
+    private func buttonMean(_ button: NSStatusBarButton) -> Double {
+        let bounds = button.bounds
+        guard bounds.width > 1, bounds.height > 1,
+              let bitmap = button.bitmapImageRepForCachingDisplay(in: bounds)
+        else { return 0 }
+        button.cacheDisplay(in: bounds, to: bitmap)
+        var total = 0.0
+        var count = 0
+        for x in 0..<bitmap.pixelsWide {
+            for y in 0..<bitmap.pixelsHigh {
+                guard let color = bitmap.colorAt(x: x, y: y) else { continue }
+                let alpha = color.alphaComponent
+                total += (color.redComponent + color.greenComponent + color.blueComponent)
+                    / 3 * alpha
+                count += 1
+            }
+        }
+        return count > 0 ? total / Double(count) : 0
     }
 
     /// Opens the popover, measures what SwiftUI actually laid out inside it, and

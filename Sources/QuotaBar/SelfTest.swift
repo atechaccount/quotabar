@@ -24,6 +24,7 @@ enum SelfTest {
         print("SELFTEST popover \(await statusItem.popoverReport())")
 
         print("SELFTEST resize \(await statusItem.resizeAnimationReport())")
+        print("SELFTEST openstate \(await statusItem.openStateReport())")
 
         // The panel now sizes to its page on purpose, so differing heights here
         // are correct. What must not vary is the same page measured twice, and
@@ -170,7 +171,7 @@ enum SelfTest {
         }
 
         print("SELFTEST statusitem buttonInk \(buttonInkReport(button))")
-        dumpAppearance(model: model, button: button)
+        dumpAppearance(model: model, statusItem: statusItem, button: button)
         dumpAppearanceSweep(model: model, statusItem: statusItem, button: button)
         dumpMenuBarGapSweep(
             button: button,
@@ -180,7 +181,57 @@ enum SelfTest {
             button: button,
             provider: model.menuBarReadout.provider,
             appearance: model.preferences.menuBarAppearance)
+        dumpPlateHug(
+            button: button,
+            provider: model.menuBarReadout.provider,
+            appearance: model.preferences.menuBarAppearance)
 
+    }
+
+    /// Where the plate that covers mark and number together actually lands.
+    ///
+    /// The captain read the old plate as a frame around the readout rather than
+    /// a backing behind it, because it filled the button's bounds and a
+    /// variable-length status item is about 10pt wider than its title on each
+    /// side. So this reports both: the bounds the old plate used and the
+    /// rectangle the new one gets, plus the padding between them, at the three
+    /// readouts that fill the reserved column. The plate hugs the column rather
+    /// than the ink, so its width must not change across those three.
+    private static func dumpPlateHug(
+        button: NSStatusBarButton,
+        provider: String?,
+        appearance: MenuBarAppearance)
+    {
+        let original = button.attributedTitle
+        defer {
+            button.attributedTitle = original
+            button.layoutSubtreeIfNeeded()
+        }
+
+        var plated = appearance
+        plated.backingScope = .markAndNumber
+
+        for dark in [false, true] {
+            var entries: [String] = []
+            var widths: Set<Int> = []
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: provider, dark: dark, appearance: plated)
+            for value in [4.0, 44, 100] {
+                button.attributedTitle = StatusItemController.statusTitle(
+                    mark: mark,
+                    percent: StatusItemController.reservedPercent(value),
+                    appearance: plated)
+                button.layoutSubtreeIfNeeded()
+                let bounds = button.bounds
+                let frame = StatusItemController.wholeItemPlateFrame(in: button)
+                widths.insert(Int((frame.width * 10).rounded()))
+                entries.append(String(
+                    format: "%.0f%%=item%.1f/plate%.1f/pad%.1f",
+                    value, bounds.width, frame.width, (bounds.width - frame.width) / 2))
+            }
+            print("SELFTEST platehug \(dark ? "dark" : "light") \(entries.joined(separator: " ")) "
+                + "onePlateWidth=\(widths.count == 1 ? "true" : "NO")")
+        }
     }
 
     /// Draws the live status button into a bitmap and reports how much ink lands
@@ -329,11 +380,13 @@ enum SelfTest {
     /// What the appearance settings actually did to the drawn item: which plate
     /// is in play, whether the button's own layer carries the wide one, and what
     /// face and colour the number came out in.
-    private static func dumpAppearance(model: AppModel, button: NSStatusBarButton) {
+    private static func dumpAppearance(
+        model: AppModel, statusItem: StatusItemController, button: NSStatusBarButton)
+    {
         let appearance = model.preferences.menuBarAppearance
         let dark = StatusItemController.isDark(button.effectiveAppearance)
         let plate = StatusItemController.wholeItemPlate(appearance: appearance, dark: dark)
-        let layerAlpha = button.layer?.backgroundColor?.alpha ?? 0
+        let drawn = statusItem.drawnPlate
         let font = (button.attributedTitle.length > 0
             ? button.attributedTitle.attribute(
                 .font, at: button.attributedTitle.length - 1, effectiveRange: nil) as? NSFont
@@ -341,7 +394,7 @@ enum SelfTest {
 
         print(String(
             format: "SELFTEST appearance scope=%@ mark=%@ backing=%@ text=%@ font=%@ "
-                + "drawnFont=%@ wholeItemPlate=%@ layerAlpha=%.3f",
+                + "drawnFont=%@ wholeItemPlate=%@ plateAlpha=%.3f plateWidth=%.0f item=%.0f",
             appearance.backingScope.rawValue,
             appearance.markStyle.rawValue,
             appearance.backingColorStyle.rawValue,
@@ -349,7 +402,9 @@ enum SelfTest {
             appearance.font.rawValue,
             font.fontName,
             plate == nil ? "none" : "yes",
-            layerAlpha))
+            drawn?.alpha ?? 0,
+            drawn?.frame.width ?? 0,
+            button.bounds.width))
     }
 
     /// Each appearance option put through the real status item, because the
@@ -371,9 +426,11 @@ enum SelfTest {
             appearance.backingScope = scope
             variants.append(("scope=\(scope.rawValue)", appearance))
         }
-        var greyscale = MenuBarAppearance.default
-        greyscale.markStyle = .greyscale
-        variants.append(("mark=greyscale", greyscale))
+        for style in MenuBarMarkStyle.allCases where style != .color {
+            var appearance = MenuBarAppearance.default
+            appearance.markStyle = style
+            variants.append(("mark=\(style.rawValue)", appearance))
+        }
 
         var custom = MenuBarAppearance.default
         custom.backingScope = .markAndNumber
@@ -391,16 +448,17 @@ enum SelfTest {
 
             let mark = StatusItemController.markImage(in: button.attributedTitle)
             let markInk = mark.map { inkCoverage(of: $0) }
-            let plate = button.layer?.backgroundColor
+            let plate = statusItem.drawnPlate
             print(String(
                 format: "SELFTEST appearancesweep %@ mark=%@ markAvg=(%.2f,%.2f,%.2f) "
-                    + "layerAlpha=%.3f layerRadius=%.1f width=%.0f",
+                    + "plateAlpha=%.3f plateRadius=%.1f plateWidth=%.0f width=%.0f",
                 label,
                 mark == nil ? "MISSING" : "yes",
                 markInk?.average.red ?? 0, markInk?.average.green ?? 0,
                 markInk?.average.blue ?? 0,
                 plate?.alpha ?? 0,
-                button.layer?.cornerRadius ?? 0,
+                plate?.cornerRadius ?? 0,
+                plate?.frame.width ?? 0,
                 button.bounds.width))
         }
     }

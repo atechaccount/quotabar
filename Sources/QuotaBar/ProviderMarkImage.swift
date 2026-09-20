@@ -20,7 +20,7 @@ enum ProviderMarkImage {
         let side: CGFloat
         let backingOpacity: Double
         let backingColor: String
-        let greyscale: Bool
+        let markStyle: String
         let insetMark: Bool
     }
 
@@ -73,7 +73,7 @@ enum ProviderMarkImage {
             side: side,
             backingOpacity: backing?.opacity ?? 0,
             backingColor: backing.map { BrandColors.hex(from: $0.color) } ?? "",
-            greyscale: markStyle == .greyscale,
+            markStyle: markStyle.rawValue,
             insetMark: insetMark)
         if let cached = cache[key] { return cached }
 
@@ -92,9 +92,9 @@ enum ProviderMarkImage {
         dark ? MenuBarAppearance.automaticOpacityOnDark : MenuBarAppearance.automaticOpacityOnLight
     }
 
-    /// The menu bar image for the captain's chosen appearance: the mark, in
-    /// colour or greyscale, on its plate when the backing sits behind the icon
-    /// alone. The plate that covers icon and number together is not an image -
+    /// The menu bar image for the captain's chosen appearance: the mark, in its
+    /// brand colour or in a flat black or white, on its plate when the backing
+    /// sits behind the icon alone. The plate that covers icon and number together is not an image -
     /// `StatusItemController` draws that one under the whole item.
     static func menuBarImage(
         provider: String?,

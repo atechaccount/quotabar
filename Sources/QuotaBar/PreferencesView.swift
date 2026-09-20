@@ -143,7 +143,7 @@ struct PreferencesView: View {
         Card {
             PreferenceRow(
                 title: "Icon",
-                note: "The provider mark in its brand colour, or drained of hue.")
+                note: "The provider mark in its brand colour, or filled solid in one ink.")
             {
                 Picker("", selection: $preferences.menuBarAppearance.markStyle) {
                     ForEach(MenuBarMarkStyle.allCases) { style in

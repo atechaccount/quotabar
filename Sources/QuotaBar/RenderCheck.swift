@@ -126,6 +126,191 @@ enum RenderCheck {
 
         write(menuBarBackingSheet(), to: root.appendingPathComponent("menubar-backing.png"))
         write(menuBarColumnSheet(), to: root.appendingPathComponent("menubar-column.png"))
+        write(menuBarMarkStyleSheet(), to: root.appendingPathComponent("menubar-mark-style.png"))
+        write(menuBarPlateSheet(), to: root.appendingPathComponent("menubar-plate.png"))
+    }
+
+    /// How wide AppKit's own padding makes a variable-length status item beyond
+    /// its title, on each side. Measured off the real `NSStatusBarButton`, and
+    /// printed live by the self-test's `platehug` line; it is written down here
+    /// only so these offscreen sheets can draw the item at the size the menu bar
+    /// actually gives it.
+    private static let appKitItemPadding: CGFloat = 10.4
+
+    /// The three mark styles, side by side, over a light menu bar and a dark
+    /// one. Black and white are flat fills, which is the whole point of them:
+    /// the black mark is the same black on both backgrounds.
+    private static func menuBarMarkStyleSheet() -> NSImage? {
+        let rowHeight: CGFloat = 34
+        let labelColumn: CGFloat = 96
+        let cellWidth: CGFloat = 108
+        let styles = MenuBarMarkStyle.allCases
+        let rows: [(name: String, dark: Bool)] = [("Light menu bar", false), ("Dark menu bar", true)]
+
+        let width = labelColumn + cellWidth * CGFloat(styles.count) + 16
+        let height = rowHeight * CGFloat(rows.count) + 30
+
+        return NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
+            sheetBackground(width: width, height: height)
+            for (column, style) in styles.enumerated() {
+                (style.title as NSString).draw(
+                    at: NSPoint(x: labelColumn + CGFloat(column) * cellWidth + 8, y: 8),
+                    withAttributes: sheetCaption)
+            }
+            for (row, entry) in rows.enumerated() {
+                let y = 26 + CGFloat(row) * rowHeight
+                (entry.name as NSString).draw(
+                    at: NSPoint(x: 10, y: y + rowHeight / 2 - 6), withAttributes: sheetCaption)
+                for (column, style) in styles.enumerated() {
+                    var appearance = MenuBarAppearance.default
+                    appearance.markStyle = style
+                    let cell = NSRect(
+                        x: labelColumn + CGFloat(column) * cellWidth, y: y,
+                        width: cellWidth, height: rowHeight)
+                    menuBarFill(entry.dark).setFill()
+                    cell.fill()
+                    drawMenuBarItem(
+                        appearance: appearance, dark: entry.dark, value: 44, in: cell,
+                        plate: nil)
+                }
+            }
+            return true
+        }
+    }
+
+    /// The plate that covers mark and number together, before and after it was
+    /// brought in to hug them, at the three readouts that fill the reserved
+    /// column and in both appearances - plus the plate the item wears while the
+    /// panel is open.
+    ///
+    /// Drawn with the backing colour turned up to a visible custom value,
+    /// because that is where the padding was noticed. The "before" plate is the
+    /// button's whole bounds, which is what the layer background could only
+    /// ever be.
+    private static func menuBarPlateSheet() -> NSImage? {
+        let rowHeight: CGFloat = 32
+        let labelColumn: CGFloat = 128
+        let cellWidth: CGFloat = 150
+        let values: [Double] = [4, 44, 100]
+
+        var visible = MenuBarAppearance.default
+        visible.backingScope = .markAndNumber
+        visible.backingColorStyle = .custom
+        visible.backingColorHex = "#3366FF"
+        visible.backingOpacity = 0.3
+
+        let columns: [(name: String, plate: PlateStyle)] = [
+            ("before: whole item", .wholeItem),
+            ("after: hugging", .hugging),
+            ("after: panel open", .huggingOpen),
+        ]
+        let rows: [(name: String, dark: Bool)] = [("Light", false), ("Dark", true)]
+
+        let width = labelColumn + cellWidth * CGFloat(columns.count) + 16
+        let height = rowHeight * CGFloat(values.count * rows.count) + 30
+
+        return NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
+            sheetBackground(width: width, height: height)
+            for (column, entry) in columns.enumerated() {
+                (entry.name as NSString).draw(
+                    at: NSPoint(x: labelColumn + CGFloat(column) * cellWidth + 8, y: 8),
+                    withAttributes: sheetCaption)
+            }
+            var row = 0
+            for appearanceRow in rows {
+                for value in values {
+                    let y = 26 + CGFloat(row) * rowHeight
+                    (String(format: "%@ %.0f%%", appearanceRow.name, value) as NSString).draw(
+                        at: NSPoint(x: 10, y: y + rowHeight / 2 - 6), withAttributes: sheetCaption)
+                    for (column, entry) in columns.enumerated() {
+                        let cell = NSRect(
+                            x: labelColumn + CGFloat(column) * cellWidth, y: y,
+                            width: cellWidth, height: rowHeight)
+                        menuBarFill(appearanceRow.dark).setFill()
+                        cell.fill()
+                        drawMenuBarItem(
+                            appearance: visible, dark: appearanceRow.dark, value: value,
+                            in: cell, plate: entry.plate)
+                    }
+                    row += 1
+                }
+            }
+            return true
+        }
+    }
+
+    private enum PlateStyle {
+        /// The button's whole bounds, AppKit's padding included.
+        case wholeItem
+        /// Hard against the reserved column, with `plateHugFraction` either side.
+        case hugging
+        /// The same rectangle, wearing the open indication.
+        case huggingOpen
+    }
+
+    private static let sheetCaption: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+        .foregroundColor: NSColor(white: 0.82, alpha: 1),
+    ]
+
+    private static func sheetBackground(width: CGFloat, height: CGFloat) {
+        NSColor(srgbRed: 0.13, green: 0.13, blue: 0.15, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+    }
+
+    private static func menuBarFill(_ dark: Bool) -> NSColor {
+        dark
+            ? NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+            : NSColor(srgbRed: 0.96, green: 0.96, blue: 0.97, alpha: 1)
+    }
+
+    /// One menu bar item, drawn the way the status button lays it out: the item
+    /// centred in its cell at the width AppKit gives it, the plate behind the
+    /// title, and the real attributed title on top.
+    private static func drawMenuBarItem(
+        appearance: MenuBarAppearance,
+        dark: Bool,
+        value: Double,
+        in cell: NSRect,
+        plate: PlateStyle?)
+    {
+        let mark = ProviderMarkImage.menuBarImage(
+            provider: "claude", dark: dark, appearance: appearance)
+        let title = StatusItemController.statusTitle(
+            mark: mark, percent: StatusItemController.reservedPercent(value),
+            appearance: appearance)
+        let titleWidth = title.size().width
+        let itemWidth = titleWidth + appKitItemPadding * 2
+        let itemX = cell.midX - itemWidth / 2
+        let itemHeight = min(cell.height - 6, 22)
+        let itemY = cell.midY - itemHeight / 2
+
+        if let plate {
+            let hug = ProviderMarkImage.menuBarSide * MenuBarMetrics.plateHugFraction
+            let rect: NSRect
+            switch plate {
+            case .wholeItem:
+                rect = NSRect(x: itemX, y: itemY, width: itemWidth, height: itemHeight)
+            case .hugging, .huggingOpen:
+                rect = NSRect(
+                    x: cell.midX - titleWidth / 2 - hug, y: itemY,
+                    width: titleWidth + hug * 2, height: itemHeight)
+            }
+            if let ink = StatusItemController.wholeItemPlate(
+                appearance: appearance, dark: dark, open: plate == .huggingOpen)
+            {
+                ink.color.setFill()
+                NSBezierPath(
+                    roundedRect: rect, xRadius: ink.cornerRadius, yRadius: ink.cornerRadius).fill()
+            }
+        }
+
+        let drawn = NSMutableAttributedString(attributedString: title)
+        drawn.addAttribute(
+            .foregroundColor, value: dark ? NSColor.white : NSColor.black,
+            range: NSRange(location: 0, length: drawn.length))
+        drawn.draw(at: NSPoint(
+            x: cell.midX - titleWidth / 2, y: cell.midY - title.size().height / 2))
     }
 
     /// The reserved column, drawn rather than argued about: the real status

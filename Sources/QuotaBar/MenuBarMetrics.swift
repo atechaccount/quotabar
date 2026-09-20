@@ -51,6 +51,22 @@ enum MenuBarMetrics {
     /// margin at any scale.
     static let backingInsetFraction: CGFloat = 0.1
 
+    /// How far the plate that covers the mark and the number together sits
+    /// outside them, on each side.
+    ///
+    /// The item is wider than its own content: AppKit gives a variable-length
+    /// status item about 10pt of its own padding on each side, and a plate
+    /// filling the button's bounds inherited all of it, which read as a frame
+    /// around the readout rather than a backing behind it. The plate is now
+    /// placed against the title and given this much room.
+    ///
+    /// A fraction of the side, like every other margin here, so it holds its
+    /// proportion at whatever scale the item is drawn at. What it hugs is the
+    /// reserved three-digit column, not the ink: the column is the same width
+    /// at 4% as at 100%, and a plate that tracked the ink would breathe as the
+    /// quota fell.
+    static let plateHugFraction: CGFloat = 0.12
+
     /// The whole gap between the mark and the number beside it.
     ///
     /// Not scaled. This is an optical minimum rather than a dimension of the

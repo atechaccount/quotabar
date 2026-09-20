@@ -29,7 +29,7 @@ struct MenuBarAppearanceRenderingTests {
 
         let chosen = MenuBarAppearance(
             backingScope: .markAndNumber,
-            markStyle: .greyscale,
+            markStyle: .white,
             backingColorStyle: .custom,
             backingColorHex: "#3366FF",
             backingOpacity: 0.24,
@@ -46,12 +46,30 @@ struct MenuBarAppearanceRenderingTests {
     func eachChoiceIsStoredUnderItsOwnKeyRatherThanOneBlob() {
         let store = InMemoryPreferenceStore()
         let preferences = AppPreferences(defaults: store)
-        preferences.menuBarAppearance.markStyle = .greyscale
+        preferences.menuBarAppearance.markStyle = .black
 
         // Only the one setting moved; everything else still reads its default.
         var expected = MenuBarAppearance.default
-        expected.markStyle = .greyscale
+        expected.markStyle = .black
         #expect(reopened(store).menuBarAppearance == expected)
+    }
+
+    /// The captain's greyscale mark carries over to the ink it was drawing,
+    /// and the migrated value is written back so the next launch - which may
+    /// be in the other appearance - does not move it again.
+    @Test
+    func aStoredGreyscaleMarkMigratesOnceToTheMatchingInk() {
+        for (dark, expected) in [(true, MenuBarMarkStyle.white), (false, .black)] {
+            let store = InMemoryPreferenceStore(["menuBarMarkStyle": "greyscale"])
+            let preferences = AppPreferences(defaults: store, darkMenuBar: dark)
+            #expect(preferences.menuBarAppearance.markStyle == expected)
+            #expect(store.string(forKey: "menuBarMarkStyle") == expected.rawValue)
+
+            // Relaunched in the other appearance: the migration is done, so the
+            // choice stays where it landed.
+            let relaunched = AppPreferences(defaults: store, darkMenuBar: !dark)
+            #expect(relaunched.menuBarAppearance.markStyle == expected)
+        }
     }
 
     /// A stored value QuotaBar no longer understands must not take the menu bar
@@ -167,23 +185,34 @@ struct MenuBarAppearanceRenderingTests {
             "the plate came out \(corner) instead of red")
     }
 
+    /// The drawn mark, not just the colour decision: black has to come out
+    /// black and white has to come out white, in both appearances, and the
+    /// brand colour has to still be a colour.
     @Test
-    func greyscaleDrainsTheDrawnMarkWhileColourKeepsIt() {
+    func blackAndWhiteMarksDrawAsFlatInksWhileColourKeepsItsHue() {
         var appearance = MenuBarAppearance.default
         appearance.backingScope = .none
 
-        let colored = averageInk(ProviderMarkImage.menuBarImage(
-            provider: "claude", dark: false, appearance: appearance))
-        #expect(
-            abs(colored.red - colored.blue) > 0.1,
-            "the coloured mark drew as a grey: \(colored)")
+        for dark in [false, true] {
+            let colored = averageInk(ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: dark, appearance: appearance))
+            #expect(
+                abs(colored.red - colored.blue) > 0.1,
+                "the coloured mark drew as a grey: \(colored)")
+        }
 
-        appearance.markStyle = .greyscale
-        let grey = averageInk(ProviderMarkImage.menuBarImage(
-            provider: "claude", dark: false, appearance: appearance))
-        #expect(
-            abs(grey.red - grey.green) < 0.02 && abs(grey.green - grey.blue) < 0.02,
-            "the greyscale mark kept a hue: \(grey)")
+        for (style, expected) in [(MenuBarMarkStyle.black, 0.0), (.white, 1.0)] {
+            appearance.markStyle = style
+            for dark in [false, true] {
+                let ink = averageInk(ProviderMarkImage.menuBarImage(
+                    provider: "claude", dark: dark, appearance: appearance))
+                for channel in [ink.red, ink.green, ink.blue] {
+                    #expect(
+                        abs(channel - expected) < 0.04,
+                        "\(style.rawValue) dark=\(dark) drew \(ink) rather than a flat ink")
+                }
+            }
+        }
     }
 
     // MARK: - The drawn title
@@ -314,5 +343,75 @@ struct MenuBarAppearanceRenderingTests {
         let drawn = plate?.color.usingColorSpace(.sRGB)
         #expect(Double(drawn?.alphaComponent ?? 0) == MenuBarAppearance.automaticOpacityOnDark)
         #expect(Double(drawn?.redComponent ?? 0) == 1, "a dark menu bar takes a white plate")
+    }
+
+    /// Every backing scope wears a plate while the panel is open, including the
+    /// one that draws none the rest of the time - taking the feedback away
+    /// altogether was never the fix.
+    @Test
+    func everyScopeShowsAPlateWhileThePanelIsOpen() {
+        for scope in MenuBarBackingScope.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.backingScope = scope
+            for dark in [false, true] {
+                let open = StatusItemController.wholeItemPlate(
+                    appearance: appearance, dark: dark, open: true)
+                #expect(open != nil, "\(scope.rawValue) dark=\(dark) showed nothing when open")
+                #expect((open?.cornerRadius ?? 0) > 0)
+            }
+        }
+    }
+
+    // MARK: - The plate's hug
+
+    /// The plate is placed against the reserved column, not the button's
+    /// bounds, and the column is the same width at 4% as at 100% - so the
+    /// plate must be too. A plate that tracked the ink would breathe as the
+    /// quota fell, which is the movement the column exists to prevent.
+    @Test
+    func theHuggingPlateKeepsOneWidthAtEveryReadout() {
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: 200, height: 22))
+        var widths: Set<Int> = []
+        var appearance = MenuBarAppearance.default
+        appearance.backingScope = .markAndNumber
+
+        for value in [0.0, 4, 9, 44, 100] {
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: false, appearance: appearance)
+            let title = StatusItemController.statusTitle(
+                mark: mark,
+                percent: StatusItemController.reservedPercent(value),
+                appearance: appearance)
+            button.attributedTitle = title
+            widths.insert(Int(StatusItemController.wholeItemPlateFrame(in: button).width))
+        }
+        #expect(widths.count == 1, "the plate changed width with the number: \(widths.sorted())")
+    }
+
+    /// And it really is narrower than the button, by the hug on each side - a
+    /// plate that fell back to the bounds is the frame the captain objected to.
+    @Test
+    func theHuggingPlateSitsInsideTheButtonsBounds() {
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: 120, height: 22))
+        var appearance = MenuBarAppearance.default
+        appearance.backingScope = .markAndNumber
+        let mark = ProviderMarkImage.menuBarImage(
+            provider: "claude", dark: false, appearance: appearance)
+        let title = StatusItemController.statusTitle(
+            mark: mark, percent: StatusItemController.reservedPercent(44), appearance: appearance)
+        button.attributedTitle = title
+
+        let frame = StatusItemController.wholeItemPlateFrame(in: button)
+        #expect(frame.width < button.bounds.width)
+        #expect(frame.width > title.size().width, "the plate has to leave the readout some room")
+        #expect(frame.minX > 0, "the plate starts inside the button")
+        #expect(frame.height == button.bounds.height)
+
+        // A button no wider than its title has nothing to give back, so the
+        // plate falls back to the bounds rather than being drawn narrower than
+        // the readout it is meant to sit behind.
+        let tight = NSButton(frame: NSRect(x: 0, y: 0, width: title.size().width, height: 22))
+        tight.attributedTitle = title
+        #expect(StatusItemController.wholeItemPlateFrame(in: tight) == tight.bounds)
     }
 }

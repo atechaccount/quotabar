@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import QuotaBarCore
 
@@ -70,7 +71,10 @@ final class AppPreferences: ObservableObject {
         didSet { defaults.set(didSeedVisibility, forKey: Key.didSeedVisibility) }
     }
 
-    init(defaults: PreferenceStore = UserDefaults.standard) {
+    /// `darkMenuBar` is only read to migrate the retired greyscale mark style.
+    /// It defaults to the running system's appearance; the tests pass it
+    /// explicitly, which is also why it is not simply read inline.
+    init(defaults: PreferenceStore = UserDefaults.standard, darkMenuBar: Bool? = nil) {
         self.defaults = defaults
         refreshInterval = defaults.object(forKey: Key.refreshInterval) == nil
             ? 120
@@ -82,12 +86,30 @@ final class AppPreferences: ObservableObject {
         hiddenProviders = Set(defaults.stringArray(forKey: Key.hiddenProviders) ?? [])
         didSeedFocus = defaults.bool(forKey: Key.didSeedFocus)
         didSeedVisibility = defaults.bool(forKey: Key.didSeedVisibility)
-        menuBarAppearance = Self.readAppearance(from: defaults)
+        menuBarAppearance = Self.readAppearance(
+            from: defaults, darkMenuBar: darkMenuBar ?? Self.systemIsDark)
+        // The retired greyscale setting is migrated on read, so write the
+        // resolved choice straight back. Without this the migration runs again
+        // on every launch and a captain who was on greyscale in the dark would
+        // flip to black the first time he launched in the light.
+        if defaults.string(forKey: Key.markStyle) == MenuBarMarkStyle.retiredGreyscaleRawValue {
+            defaults.set(menuBarAppearance.markStyle.rawValue, forKey: Key.markStyle)
+        }
+    }
+
+    /// The menu bar's own appearance, which is what a migrated greyscale mark
+    /// was being drawn against. Read once at init; `NSApp` may not exist yet
+    /// under the test runner, and light is the right answer when it does not.
+    static var systemIsDark: Bool {
+        guard let appearance = NSApp?.effectiveAppearance else { return false }
+        return appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
     // MARK: - Menu bar appearance
 
-    private static func readAppearance(from defaults: PreferenceStore) -> MenuBarAppearance {
+    private static func readAppearance(
+        from defaults: PreferenceStore, darkMenuBar: Bool) -> MenuBarAppearance
+    {
         let fallback = MenuBarAppearance.default
         func choice<T: RawRepresentable>(_ key: String, _ fallback: T) -> T
         where T.RawValue == String {
@@ -96,7 +118,10 @@ final class AppPreferences: ObservableObject {
 
         return MenuBarAppearance(
             backingScope: choice(Key.backingScope, fallback.backingScope),
-            markStyle: choice(Key.markStyle, fallback.markStyle),
+            // Not `choice`: the retired greyscale value has to become black or
+            // white rather than fall back to the brand colour.
+            markStyle: MenuBarMarkStyle.stored(
+                defaults.string(forKey: Key.markStyle), dark: darkMenuBar),
             backingColorStyle: choice(Key.backingColorStyle, fallback.backingColorStyle),
             backingColorHex: defaults.string(forKey: Key.backingColorHex)
                 ?? fallback.backingColorHex,
