@@ -28,6 +28,15 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$ICONSET"
 cp "$BIN_DIR/QuotaBar" "$APP/Contents/MacOS/QuotaBar"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
+# The real provider marks live in the SwiftPM resource bundle. Without this the
+# app launches with no menu bar mark at all, so treat a missing bundle as fatal.
+RESOURCE_BUNDLE="$BIN_DIR/QuotaBar_QuotaBar.bundle"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+    echo "error: provider mark resources were not built at $RESOURCE_BUNDLE" >&2
+    exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/QuotaBar_QuotaBar.bundle"
+
 swift "$ROOT/Scripts/MakeIcon.swift" "$ICONSET/icon_512x512@2x.png"
 for entry in \
     "16 icon_16x16.png" \

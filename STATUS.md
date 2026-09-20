@@ -10,20 +10,21 @@
 
 ## Next
 
+- Add real Limit Reset Credits once `quota-axi` reports that field. It reports a spending-credit balance, which is a different number, so nothing in the UI promises reset credits today.
 - Build the separately scoped Notification Center widget when full Xcode is available. This is deferred follow-up work and no widget extension exists in this package.
-- Keep login-item status deliberately unqueried until the user opens Preferences, avoiding a Background Task Management permission prompt during ordinary startup and quota refresh.
 - Investigate whether the ad-hoc-signed app sees fewer credential sources than an interactive shell; `auth_required` rows are expected and safe in the meantime.
+- Review vendor mark licensing before distributing QuotaBar beyond personal use. The marks in `Sources/QuotaBar/Resources/ProviderMarks` are the vendors' own.
 
 ## Recent round
 
-Polish round driven by running the app. What changed:
+The presentation layer was rebuilt against the approved design in `docs/design/`. The quota model, the refresh scheduler, the preferences store and the evidence hooks were kept.
 
-- **Preferences opens reliably.** The SwiftUI `Settings` scene was replaced by `SettingsWindowPresenter`, which activates the app, orders the window front and makes it key, and drops the window on close so reopening works. `SettingsWindowPresenterTests` drives the same object the button drives; `QUOTABAR_VERIFY=1` proves it in the built bundle, reporting the window visible and on screen on the first open, the second, and the reopen after a close.
-The window is also ordered front regardless of activation, because macOS 14 can refuse to activate an app that the user did not just interact with. In the verification hook, which runs at launch with no user interaction, that refusal is visible as `appActive=false`; on the real path the captain triggers it by clicking the menu bar item, so activation is granted and the window takes focus.
-- **The menu bar number is attributed.** It now shows the focused provider's mark next to its session percentage, never a bare number. The focus defaults to Claude or Codex, whichever is signed in, and is switched in one click from the dropdown. "Lowest of shown" remains available but is no longer the default.
-- **Session is the headline.** A provider's headline number is its short rolling session window, with the weekly window kept as secondary context. Both are always visible with their own reset times.
-- **Provider marks.** Every provider has a distinct mark drawn in code in its brand color, in the dropdown and beside the menu bar number. Marks and colors share one table in `Sources/QuotaBarCore/BrandColors.swift`.
-- **Full overview.** Every provider `quota-axi` reports appears, with every window broken out by its own label, remaining percent, reset cadence and reset time. Providers that are not signed in appear dimmed in a separate section, never as a fake zero.
-- **Legibility.** Brand colors are checked against a 3:1 contrast floor on both light and dark menu bars and darkened only when a raw color falls below it, which affects the lighter colors on a light menu bar only.
+- **The menu bar mark is fixed.** The SwiftUI `MenuBarExtra` was replaced by an AppKit `NSStatusItem` in `StatusItemController`. Its button gets a real `NSImage` of the provider's mark, sized for the menu bar, painted in the contrast-adjusted brand color with `isTemplate` off, plus the percentage as the title. It re-renders when the focused provider or the effective appearance changes. The old label passed a custom SwiftUI `Shape`, which the status item host dropped while keeping the `Text` - a percentage with no icon.
+- **The self-test now reads the real status button.** It rasterises the live `NSStatusBarButton` and reports ink in the mark region, because the previous offscreen-only mark check passed while the real menu bar showed nothing.
+- **Tabbed shell.** Overview plus one page per shown provider, replacing the rejected single flat column. The filled tab is the page; the outlined tab with the dot is the menu bar focus. Selecting a provider tab moves the menu bar focus; returning to Overview does not.
+- **Real provider marks.** The hand-drawn geometry is gone. The vendors' own SVGs are carried as SwiftPM resources and loaded as `NSImage`; `build.sh` fails if the resource bundle is missing.
+- **Right-aligned numbers.** Labels left, percentages and reset times on fixed right-aligned columns, on every page and in Preferences.
+- **First-launch preferences.** Provider visibility is seeded once from the first measurable snapshot - fresh measurable providers on, everything else off - computed from the snapshot rather than a hard-coded provider list, and never overridden afterwards.
+- **Provider pages.** A signed-in provider shows its account, plan, source and one section per reported window. An unavailable provider is hidden by default and, when turned on, states its real status and every source `quota-axi` tried, never a zero.
 
-Verified on the built bundle against live `quota-axi` output: 11 providers reported, 3 active and 8 dimmed with nothing dropped; every mark rendered in its expected brand color in both appearances; and the refresh schedule ticked at 32.4s and 30.0s against a 30s interval with no errors.
+Verified on the built bundle against live `quota-axi` output: 11 providers reported, 3 shown and 8 correctly off after the seed; the real status button drew its mark with 300 ink pixels in the mark region alongside the title; the sticky selection held through a provider page and back to Overview; and the refresh schedule ticked at 32.7s and 31.1s against a 30s interval with no errors. A copy of the app under a throwaway bundle identifier confirmed the genuine first-launch seed: focus on Claude, three providers on, eight off.

@@ -4,6 +4,13 @@ import Foundation
 import QuotaBarCore
 import SwiftUI
 
+/// Which page the popover is showing. Overview is the default and the only page
+/// that is not a provider.
+enum MenuPage: Hashable {
+    case overview
+    case provider(String)
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var snapshot: QuotaSnapshot?
@@ -11,7 +18,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isRefreshing = false
 
-    let preferences = AppPreferences()
+    /// The page being looked at. This is *not* the menu bar focus: moving back to
+    /// Overview leaves the menu bar where it was.
+    @Published private(set) var page: MenuPage = .overview
+
+    let preferences: AppPreferences
 
     private var wakeObserver: NSObjectProtocol?
     private var intervalObservation: AnyCancellable?
@@ -35,8 +46,17 @@ final class AppModel: ObservableObject {
         })
 
     /// `startRefreshing: false` builds a model that drives no schedule and runs no
-    /// subprocess. The verification hook uses it so it cannot disturb the real app.
-    init(startRefreshing: Bool = true) {
+    /// subprocess. The verification hook uses it so it cannot disturb the real
+    /// app, and tests use it with a canned snapshot and their own defaults.
+    init(
+        startRefreshing: Bool = true,
+        preferences injectedPreferences: AppPreferences? = nil,
+        snapshot: QuotaSnapshot? = nil,
+        lastSuccessAt: Date? = nil)
+    {
+        preferences = injectedPreferences ?? AppPreferences()
+        self.snapshot = snapshot
+        self.lastSuccessAt = lastSuccessAt
         guard startRefreshing else { return }
 
         activity = ProcessInfo.processInfo.beginActivity(
@@ -75,44 +95,48 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Signed-in providers the captain has chosen to show, focus first so the
-    /// provider driving the menu bar is always the first thing in the overview.
-    var activeProviders: [QuotaProvider] {
-        visibleProviders
-            .filter(\.isFresh)
-            .sorted { first, second in
-                let firstFocused = first.provider == preferences.focusedProvider
-                let secondFocused = second.provider == preferences.focusedProvider
-                if firstFocused != secondFocused { return firstFocused }
+    // MARK: - Provider lists
 
-                // Then the providers in day-to-day use, so the overview opens on
-                // what matters rather than on whatever sorts first alphabetically.
-                let firstRank = Self.usageRank(first.provider)
-                let secondRank = Self.usageRank(second.provider)
-                if firstRank != secondRank { return firstRank < secondRank }
+    private var visibleProviders: [QuotaProvider] {
+        (snapshot?.providers ?? []).filter { preferences.isVisible($0.provider) }
+    }
 
-                return first.displayName.localizedCaseInsensitiveCompare(second.displayName)
-                    == .orderedAscending
-            }
+    /// The tab strip, in a stable order. Measurable providers first, in the order
+    /// they are actually used, then anything the user chose to show anyway.
+    /// Deliberately not focus-first: the strip must not reshuffle under the
+    /// pointer when the menu bar focus moves.
+    var tabProviders: [QuotaProvider] {
+        visibleProviders.sorted { first, second in
+            let firstMeasurable = first.availability.isMeasurable
+            let secondMeasurable = second.availability.isMeasurable
+            if firstMeasurable != secondMeasurable { return firstMeasurable }
+
+            let firstRank = Self.usageRank(first.provider)
+            let secondRank = Self.usageRank(second.provider)
+            if firstRank != secondRank { return firstRank < secondRank }
+
+            return first.displayName.localizedCaseInsensitiveCompare(second.displayName)
+                == .orderedAscending
+        }
+    }
+
+    /// The Overview lists only providers with fresh, measurable quota. Everything
+    /// else is one quiet line pointing at Preferences.
+    var overviewProviders: [QuotaProvider] {
+        tabProviders.filter { $0.availability.isMeasurable }
+    }
+
+    /// Everything quota-axi reported that the Overview is not showing. The
+    /// Overview names the count and points at Preferences rather than listing
+    /// eight rows nobody can act on.
+    var providersNotShown: [QuotaProvider] {
+        let shown = Set(overviewProviders.map(\.provider))
+        return allProviders.filter { !shown.contains($0.provider) }
     }
 
     private static func usageRank(_ provider: String) -> Int {
         MenuBarReadoutResolver.preferredFocusOrder.firstIndex(of: provider)
             ?? MenuBarReadoutResolver.preferredFocusOrder.count
-    }
-
-    /// Everything quota-axi reported that is not currently readable. These still
-    /// appear, dimmed and in their own section - never as a fake zero.
-    var inactiveProviders: [QuotaProvider] {
-        visibleProviders
-            .filter { !$0.isFresh }
-            .sorted {
-                $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-            }
-    }
-
-    private var visibleProviders: [QuotaProvider] {
-        (snapshot?.providers ?? []).filter { preferences.isVisible($0.provider) }
     }
 
     var allProviders: [QuotaProvider] {
@@ -121,9 +145,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Providers worth offering as a focus target in the one-click switcher.
-    var focusCandidates: [QuotaProvider] {
-        activeProviders
+    func provider(_ key: String) -> QuotaProvider? {
+        snapshot?.providers.first { $0.provider == key }
+    }
+
+    // MARK: - Pages and menu bar focus
+
+    /// The page actually renderable right now. A remembered provider page whose
+    /// tab has gone falls back to Overview without touching the menu bar focus.
+    var resolvedPage: MenuPage {
+        guard case let .provider(key) = page else { return .overview }
+        return tabProviders.contains(where: { $0.provider == key }) ? page : .overview
+    }
+
+    /// Selecting a provider tab opens its page *and* points the menu bar at it.
+    /// Selecting Overview only changes the page.
+    func select(_ page: MenuPage) {
+        self.page = page
+        if case let .provider(key) = page {
+            preferences.focus(on: key)
+        }
     }
 
     var menuBarReadout: MenuBarReadout {
@@ -141,6 +182,8 @@ final class AppModel: ObservableObject {
     func focus(on provider: String) {
         preferences.focus(on: provider)
     }
+
+    // MARK: - Actions
 
     /// Built lazily so the window only exists once the captain asks for it.
     private lazy var settingsPresenter = SettingsWindowPresenter(
@@ -178,6 +221,7 @@ final class AppModel: ObservableObject {
             switch result {
             case let .success(snapshot):
                 self.snapshot = snapshot
+                preferences.seedVisibilityIfNeeded(from: snapshot)
                 preferences.seedFocusIfNeeded(from: snapshot)
                 lastSuccessAt = Date()
                 lastError = nil

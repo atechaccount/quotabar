@@ -19,9 +19,10 @@ final class AppPreferences: ObservableObject {
         static let didSeedFocus = "didSeedFocusedProvider"
         static let readOnly = "readOnlyRefresh"
         static let hiddenProviders = "hiddenProviders"
+        static let didSeedVisibility = "didSeedProviderVisibility"
     }
 
-    private let defaults: UserDefaults
+    private let defaults: PreferenceStore
 
     @Published var refreshInterval: TimeInterval {
         didSet { defaults.set(refreshInterval, forKey: Key.refreshInterval) }
@@ -31,6 +32,9 @@ final class AppPreferences: ObservableObject {
         didSet { defaults.set(focusMode.rawValue, forKey: Key.focusMode) }
     }
 
+    /// The sticky menu bar selection. Every write lands in `UserDefaults`, which
+    /// is what makes the choice survive closing the popover, moving back to
+    /// Overview, quitting, and relaunching.
     @Published var focusedProvider: String {
         didSet { defaults.set(focusedProvider, forKey: Key.focusedProvider) }
     }
@@ -47,7 +51,11 @@ final class AppPreferences: ObservableObject {
         didSet { defaults.set(didSeedFocus, forKey: Key.didSeedFocus) }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    private(set) var didSeedVisibility: Bool {
+        didSet { defaults.set(didSeedVisibility, forKey: Key.didSeedVisibility) }
+    }
+
+    init(defaults: PreferenceStore = UserDefaults.standard) {
         self.defaults = defaults
         refreshInterval = defaults.object(forKey: Key.refreshInterval) == nil
             ? 120
@@ -58,6 +66,7 @@ final class AppPreferences: ObservableObject {
         readOnlyRefresh = defaults.object(forKey: Key.readOnly) as? Bool ?? false
         hiddenProviders = Set(defaults.stringArray(forKey: Key.hiddenProviders) ?? [])
         didSeedFocus = defaults.bool(forKey: Key.didSeedFocus)
+        didSeedVisibility = defaults.bool(forKey: Key.didSeedVisibility)
     }
 
     /// Picks the initial focus from the first real snapshot, once. After that the
@@ -73,6 +82,18 @@ final class AppPreferences: ObservableObject {
         didSeedFocus = true
     }
 
+    /// Decides provider visibility once, from the first snapshot that can decide
+    /// it. Later snapshots never touch these switches again: a provider the user
+    /// turned on stays on when it signs out, and one they turned off stays off
+    /// when it starts reporting.
+    func seedVisibilityIfNeeded(from snapshot: QuotaSnapshot?) {
+        guard !didSeedVisibility else { return }
+        guard let seed = ProviderVisibilitySeed.hiddenProviders(from: snapshot) else { return }
+        hiddenProviders = seed
+        didSeedVisibility = true
+    }
+
+    /// Selecting a provider page is also what points the menu bar at it.
     func focus(on provider: String) {
         focusedProvider = provider
         focusMode = .focusedProvider
@@ -83,11 +104,16 @@ final class AppPreferences: ObservableObject {
         !hiddenProviders.contains(provider)
     }
 
+    /// Hiding a provider removes its tab and its Overview row. It deliberately
+    /// does not rewrite `focusedProvider`: a silent rewrite would lose a choice
+    /// the user made explicitly, and the readout already falls back to the app
+    /// glyph when the remembered provider is not in the snapshot.
     func setVisible(_ visible: Bool, provider: String) {
         if visible {
             hiddenProviders.remove(provider)
         } else {
             hiddenProviders.insert(provider)
         }
+        didSeedVisibility = true
     }
 }

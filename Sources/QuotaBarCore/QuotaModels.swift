@@ -95,10 +95,6 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
         allWindows.compactMap(\.resetsAt).min()
     }
 
-    public var unavailableDescription: String {
-        state?.status == "auth_required" ? "not signed in" : "unavailable"
-    }
-
     enum CodingKeys: String, CodingKey {
         case provider
         case label
@@ -300,11 +296,15 @@ public struct QuotaSemantics: Decodable, Sendable {
     public let status: String?
     public let description: String?
     public let effectiveAvailability: [EffectiveAvailability]?
+    /// Windows quota-axi expects the plan to have but cannot measure yet. The
+    /// provider page says so instead of pretending the quota is simply missing.
+    public let unresolvedWindowIds: [String]?
 
     enum CodingKeys: String, CodingKey {
         case status
         case description
         case effectiveAvailability
+        case unresolvedWindowIds
     }
 
     public init(from decoder: Decoder) throws {
@@ -312,6 +312,7 @@ public struct QuotaSemantics: Decodable, Sendable {
         status = values.lossy(String.self, forKey: .status)
         description = values.lossy(String.self, forKey: .description)
         effectiveAvailability = values.lossy([EffectiveAvailability].self, forKey: .effectiveAvailability)
+        unresolvedWindowIds = values.lossy([String].self, forKey: .unresolvedWindowIds)
     }
 }
 
@@ -338,8 +339,4 @@ private extension KeyedDecodingContainer {
     func lossy<T: Decodable>(_ type: T.Type, forKey key: Key) -> T? {
         try? decodeIfPresent(type, forKey: key)
     }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

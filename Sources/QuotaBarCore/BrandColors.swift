@@ -1,31 +1,21 @@
 import Foundation
 
-/// A simple vector mark drawn in code for each provider.
-///
-/// These are deliberately generic geometric forms, never vendor logo artwork:
-/// the goal is a distinct, recognizable silhouette at menu bar size.
-public enum BrandMark: String, Sendable, CaseIterable {
-    case starburst
-    case ring
-    case pointer
-    case lobes
-    case bolt
-    case crescent
-    case zigzag
-    case chevron
-    case hexagon
-    case brackets
-    case quatrefoil
-    case dot
-}
-
+/// Everything provider-specific the UI needs that quota-axi does not report:
+/// the brand color, the real provider mark to load, and the vendor QuotaBar is
+/// careful to say it does *not* contact.
 public struct ProviderBrand: Sendable, Equatable {
     public let hex: String
-    public let mark: BrandMark
+    /// Base name of the real provider mark carried in `Resources/ProviderMarks`.
+    /// `nil` means QuotaBar has no mark for this provider and falls back to its
+    /// own glyph rather than inventing artwork.
+    public let iconResourceName: String?
+    /// Who actually owns the account. Used only to state QuotaBar's boundary.
+    public let vendor: String
 
-    public init(hex: String, mark: BrandMark) {
+    public init(hex: String, iconResourceName: String?, vendor: String) {
         self.hex = hex
-        self.mark = mark
+        self.iconResourceName = iconResourceName
+        self.vendor = vendor
     }
 }
 
@@ -42,23 +32,30 @@ public struct BrandRGB: Sendable, Equatable {
 }
 
 public enum BrandColors {
-    /// The single table. Adding a provider is one line: its brand color and its mark.
-    /// Colors were referenced from each provider's own published branding; no assets were copied.
+    /// The single table. Adding a provider is one line: its brand color, the mark
+    /// file to load, and the vendor that owns the account.
+    ///
+    /// Colors were referenced from each provider's own published branding. The
+    /// marks are the vendors' real marks, carried as SVG resources - QuotaBar no
+    /// longer hand-draws stand-ins for them.
     public static let brands: [String: ProviderBrand] = [
-        "claude": ProviderBrand(hex: "#D97757", mark: .starburst),
-        "codex": ProviderBrand(hex: "#49A3B0", mark: .ring),
-        "cursor": ProviderBrand(hex: "#00BFA5", mark: .pointer),
-        "copilot": ProviderBrand(hex: "#A855F7", mark: .lobes),
-        "grok": ProviderBrand(hex: "#10A37F", mark: .bolt),
-        "kimi": ProviderBrand(hex: "#205DEB", mark: .crescent),
-        "zai": ProviderBrand(hex: "#E85A6A", mark: .zigzag),
-        "agy": ProviderBrand(hex: "#60BA7E", mark: .chevron),
-        "alibaba": ProviderBrand(hex: "#FF6A00", mark: .hexagon),
-        "opencode-go": ProviderBrand(hex: "#3B82F6", mark: .brackets),
-        "commandcode": ProviderBrand(hex: "#A04DFD", mark: .quatrefoil),
+        "claude": ProviderBrand(hex: "#D97757", iconResourceName: "ProviderIcon-claude", vendor: "Anthropic"),
+        "codex": ProviderBrand(hex: "#49A3B0", iconResourceName: "ProviderIcon-codex", vendor: "OpenAI"),
+        "cursor": ProviderBrand(hex: "#00BFA5", iconResourceName: "ProviderIcon-cursor", vendor: "Cursor"),
+        "copilot": ProviderBrand(hex: "#A855F7", iconResourceName: "ProviderIcon-copilot", vendor: "GitHub"),
+        "grok": ProviderBrand(hex: "#10A37F", iconResourceName: "ProviderIcon-grok", vendor: "xAI"),
+        "kimi": ProviderBrand(hex: "#205DEB", iconResourceName: "ProviderIcon-kimi", vendor: "Moonshot AI"),
+        "zai": ProviderBrand(hex: "#E85A6A", iconResourceName: "ProviderIcon-zai", vendor: "Z.AI"),
+        "agy": ProviderBrand(hex: "#60BA7E", iconResourceName: "ProviderIcon-antigravity", vendor: "Google"),
+        "alibaba": ProviderBrand(hex: "#FF6A00", iconResourceName: "ProviderIcon-alibaba", vendor: "Alibaba"),
+        "opencode-go": ProviderBrand(hex: "#3B82F6", iconResourceName: "ProviderIcon-opencodego", vendor: "OpenCode"),
+        "commandcode": ProviderBrand(hex: "#A04DFD", iconResourceName: "ProviderIcon-commandcode", vendor: "Command Code"),
     ]
 
-    public static let fallback = ProviderBrand(hex: "#7C7C80", mark: .dot)
+    /// An unknown provider gets a neutral color and no mark, so QuotaBar shows its
+    /// own glyph rather than another provider's artwork.
+    public static let fallback = ProviderBrand(
+        hex: "#7C7C80", iconResourceName: nil, vendor: "the provider")
 
     public static func brand(for provider: String) -> ProviderBrand {
         brands[provider] ?? fallback

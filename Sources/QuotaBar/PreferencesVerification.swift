@@ -11,8 +11,18 @@ import SwiftUI
 enum PreferencesVerification {
     static func run() async {
         let model = AppModel(startRefreshing: false)
+        // The real login-item status read is a system call the captain has asked
+        // never to happen unprompted, so the check opens the window with a stub
+        // in its place and reports the substitution rather than hiding it.
+        let stubbedLoginItem = LaunchAtLoginOperations(
+            status: { .notDetermined },
+            register: {},
+            unregister: {})
         let presenter = SettingsWindowPresenter(
-            hooks: .live(content: { AnyView(PreferencesView(model: model)) }))
+            hooks: .live(content: {
+                AnyView(PreferencesView(model: model, launchAtLoginOperations: stubbedLoginItem))
+            }))
+        print("QuotaBar verify loginItemStatus=stubbed reason=no-system-permission-prompt")
 
         // Activation and key-window status are granted by the window server
         // asynchronously, so yield to the run loop before reporting focus.

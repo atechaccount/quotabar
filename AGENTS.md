@@ -1,10 +1,17 @@
 # Project guidance
 
 - Read `STATUS.md` before substantial work.
+- The approved interface reference is `docs/design/` - four HTML mockups plus the review report behind them. Treat the mockups as the acceptance criteria for any change to the popover, the provider pages, the Preferences window, or the menu bar item.
 - Treat `quota-axi --json --full` as the only quota source; never contact provider APIs or read credentials directly.
-- Keep provider brand colors and marks in the one table in `Sources/QuotaBarCore/BrandColors.swift`; adding a provider is one line there.
+- The menu bar item is an AppKit `NSStatusItem` in `Sources/QuotaBar/StatusItemController.swift`, not a SwiftUI `MenuBarExtra`. A `MenuBarExtra` label keeps its `Text` and silently drops a custom `Shape`, which is how the app once shipped with a percentage and no icon. Any change here must keep a real `NSImage` with `isTemplate` off on `button.image`.
+- Provider brand colors, mark files and vendor names live in the one table in `Sources/QuotaBarCore/BrandColors.swift`; adding a provider is one line there plus its SVG in `Sources/QuotaBar/Resources/ProviderMarks`. Never hand-draw a stand-in mark.
 - A provider's headline number is its session window, not its weekly or lowest window. See `QuotaProvider.headline`.
-- Verify UI changes with the `QUOTABAR_VERIFY` and `QUOTABAR_SELFTEST` hooks documented in `README.md`; they print evidence without screenshots or system permissions.
+- Selecting a provider tab also points the menu bar at it; selecting Overview must not. The stored focus is never rewritten as a side effect of hiding a provider.
+- Labels go left; comparable numbers and reset times go on fixed right-aligned columns. The column widths are in `Layout` in `Sources/QuotaBar/Views.swift`.
+- Provider visibility is seeded once from the first measurable snapshot and never overridden afterwards. See `ProviderVisibilitySeed`.
+- Verify UI changes with the `QUOTABAR_SELFTEST`, `QUOTABAR_VERIFY` and `QUOTABAR_RENDER` hooks documented in `README.md`; they print evidence without screenshots or system permissions. The self-test must keep reading the real status button: an offscreen-only mark check passed while the real menu bar was empty.
+- Never read the login-item status outside an open Preferences window, and never register a login item unprompted. Both trip a system permission dialog.
+- Tests and the render hook use `InMemoryPreferenceStore`, never a scratch `UserDefaults` suite, which leaves a plist in `~/Library/Preferences` on every run.
 - Run `./test.sh` and `./build.sh` before delivery.
 - Keep the Notification Center widget out of this package until it is explicitly scoped and full Xcode is available.
 

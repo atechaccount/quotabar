@@ -49,57 +49,90 @@ Turn it on to avoid credential renewal, with the tradeoff that displayed quota c
 
 ## What the menu bar shows
 
-The menu bar item always shows a provider's mark next to its number, so a percentage is never unattributed.
+The menu bar item is a plain AppKit `NSStatusItem`. Its button gets a real `NSImage` of the focused provider's mark, painted in that provider's brand color with `isTemplate` left off, plus the percentage as the button title.
+
+This is deliberate and load-bearing. QuotaBar previously used SwiftUI's `MenuBarExtra` with a custom `Shape` in its label; the status item host keeps the `Text` from such a label and silently drops the shape, so the menu bar showed a bare percentage with no mark at all. `StatusItemController` owns the status item, re-renders on every model change and on every appearance change, and `SelfTest` rasterises the live button to prove the mark is actually drawn.
 
 - **Focused provider** (the default) shows one chosen provider and its session percentage.
 - **Lowest of shown** shows whichever visible provider has the least left. This is available but is deliberately not the default, because the lowest number anywhere is rarely the one you are working against.
 - **Icon only** shows the app mark alone.
 
-Switch between these from the dropdown itself, in one click, using the "Menu bar" controls at the top.
-Clicking any provider row also focuses that provider.
-The focus starts on Claude or Codex, whichever is signed in.
+### The sticky selection
+
+Selecting a provider tab opens that provider's page **and** points the menu bar at it. Selecting Overview only changes the page: the menu bar stays where it was. The choice is written to `UserDefaults` on every change, so it survives closing the popover, moving back to Overview, quitting and relaunching.
+
+Two edge cases are deliberate:
+
+- Before any choice has been made, the first snapshot seeds the focus once, preferring a signed-in Claude, then Codex, then the first provider with a measurable headline. With nothing measurable, the menu bar shows QuotaBar's own glyph and no number.
+- If the focused provider later signs out, its mark stays in the menu bar and only the number disappears. Hiding a provider in Preferences removes its tab but never rewrites the stored focus.
+
+## Pages
+
+The popover is a tab strip over one page at a time, not a single flat column.
+
+- **Overview** is the default page. It shows only providers with fresh, measurable quota: name, account and plan, a right-aligned headline percentage, and one solid meter per window. Everything else is one quiet line naming the count and pointing at Preferences.
+- **A signed-in provider page** shows that provider's account, plan, source and freshness, then one section per window quota-axi actually reported, with the percentage and the reset time each on their own right edge.
+- **An unavailable provider page** is hidden until the provider is turned on by hand. It states the real status, lists every source quota-axi tried and what came back, and says what QuotaBar will and will not do about it. It never renders a missing quota as zero.
+
+Labels sit on the left; comparable numbers and reset times sit on clean right edges throughout.
+
+The approved mockups for all of this are committed in [`docs/design`](docs/design/README.md) and are the acceptance criteria for interface changes.
+
+## First-launch preferences
+
+Provider visibility used to be an empty exclusion set, which meant every provider quota-axi mentioned was switched on, including the ones that cannot be read at all.
+
+The first successful snapshot now decides it once: providers with fresh, measurable quota start on, everything else starts off. The seed is computed from that snapshot rather than from a hard-coded provider list, so a machine signed into a different set of providers gets its own answer. After that seed, a later snapshot never turns a switch back on or off - the choices are the user's.
+
+Everything else starts off or neutral: read-only refresh off, launch at login off and opt-in, refresh interval 2 minutes, menu bar mode Focused provider.
+
+QuotaBar never reads the login-item status until the Preferences window is open, so ordinary startup and refresh never trigger a Background Task Management prompt.
 
 ## Session versus weekly
 
 The headline number for a provider is its **session** window, the short rolling window that constrains day-to-day work on entry-tier plans.
 The weekly window is secondary context and is always visible beneath it.
 
-Every window a provider reports appears in the overview as its own row, with its own label, its own remaining percent, how often it resets, and its own reset time.
-Nothing `quota-axi` reports is dropped.
-Providers that are not signed in still appear, dimmed, in a separate section below the active ones, never as a fake zero.
+Every window a provider reports appears as its own row on the Overview and its own section on the provider's page, with its own label, its own remaining percent and its own reset time.
+Nothing `quota-axi` reports for a shown provider is dropped.
+A provider that is not signed in is off by default rather than dimmed in a list; turn it on in Preferences and it gets its own page, which states the real status instead of a fake zero.
 
 Every percentage in the UI is **remaining**, and the header says so.
 
 ## Provider colors and marks
 
-Brand colors and per-provider marks live in one table in `Sources/QuotaBarCore/BrandColors.swift`.
-Add a provider with one line:
+Brand colors, mark files and vendor names live in one table in `Sources/QuotaBarCore/BrandColors.swift`. Add a provider with one line:
 
 ```swift
-"newprovider": ProviderBrand(hex: "#123456", mark: .hexagon),
+"newprovider": ProviderBrand(
+    hex: "#123456", iconResourceName: "ProviderIcon-newprovider", vendor: "New Provider"),
 ```
 
-Unknown providers fall back to a neutral color and a plain dot, and still render.
+The marks are the vendors' real marks, carried as SVG files in `Sources/QuotaBar/Resources/ProviderMarks` and loaded as `NSImage` at run time. They came from the public [CodexBar](https://github.com/steipete/CodexBar) resource set. `build.sh` copies the generated `QuotaBar_QuotaBar.bundle` into the app and fails the build if it is missing, because without it the menu bar has no mark to draw. They are carried for personal use; distributing QuotaBar more widely needs a separate trademark review.
 
-Marks are drawn in code as simple vector geometry in `Sources/QuotaBar/ProviderMarkView.swift`; no vendor logo artwork is downloaded or embedded.
-Colors are nudged toward readability only when a raw brand color falls below a 3:1 contrast floor against the menu bar background, which in practice affects the lighter colors on a light menu bar only.
-`BrandColorTests` asserts this floor for every provider in both appearances.
+A provider with no mark of its own falls back to QuotaBar's own glyph rather than borrowing another vendor's artwork.
 
-Provider accents and the overview's information design were referenced from the public CodexBar app; no code or assets were copied.
+Colors are nudged toward readability only when a raw brand color falls below a 3:1 contrast floor against the menu bar background, which in practice affects the lighter colors on a light menu bar only. `BrandColorTests` asserts this floor for every provider in both appearances, and `ProviderMarkImageTests` asserts that every mark resource loads, draws ink in both appearances, is not a template image, and comes out in the expected brand color.
+
+The information design was referenced from the public CodexBar app; no code was copied.
 
 ## Verifying a build
 
-Two hooks print evidence from the built bundle without screenshots or any system permission:
+Three hooks print evidence from the built bundle without screenshots or any system permission:
 
 ```sh
-open dist/QuotaBar.app --env QUOTABAR_VERIFY=1 --stdout /tmp/verify.log     # preferences window
-open dist/QuotaBar.app --env QUOTABAR_SELFTEST=1 --stdout /tmp/selftest.log # overview, marks, schedule
+QUOTABAR_SELFTEST=1 ./dist/QuotaBar.app/Contents/MacOS/QuotaBar   # data, marks, status item, schedule
+QUOTABAR_VERIFY=1   ./dist/QuotaBar.app/Contents/MacOS/QuotaBar   # preferences window
+QUOTABAR_RENDER=.artifacts/render ./dist/QuotaBar.app/Contents/MacOS/QuotaBar  # layout PNGs
 ```
 
-`QUOTABAR_VERIFY` opens the real preferences window three times, including once after closing it, and reports whether it was visible, key and frontmost each time.
-Note that this hook runs at launch with no user interaction, and macOS 14 can refuse activation in that situation, so it may report `appActive=false`; the window is ordered front regardless and still appears.
-`QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, renders each mark offscreen and compares its pixels against the expected brand color, then watches the refresh schedule tick.
-Both quit the app when they finish.
+`QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, the visibility seed, every mark's ink coverage and average color in both appearances, and then reads the **real** `NSStatusBarButton`: what image and title it was handed, and how much ink the live button actually draws in the mark region. That last check exists because the previous self-test rendered marks offscreen, passed, and still shipped a menu bar with no icon in it. It also exercises the sticky selection end to end and restores the focus it borrowed.
+
+`QUOTABAR_VERIFY` opens the real preferences window three times, including once after closing it, and reports whether it was visible, key and frontmost each time. It substitutes a stub for the login-item status so opening the window cannot trigger a system prompt, and says so in its output. Note that this hook runs at launch with no user interaction, and macOS 14 can refuse activation in that situation, so it may report `appActive=false`; the window is ordered front regardless and still appears.
+
+`QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen. Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
+
+All three quit the app when they finish.
 
 ## Scope
 

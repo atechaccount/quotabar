@@ -3,18 +3,21 @@ import Testing
 
 struct BrandColorTests {
     @Test
-    func everyKnownProviderHasAColorAndADistinctMark() {
+    func everyKnownProviderHasAColorAndItsOwnRealMark() {
         let expected = [
             "claude", "codex", "cursor", "copilot", "grok", "kimi",
             "zai", "agy", "alibaba", "opencode-go", "commandcode",
         ]
         for provider in expected {
             #expect(BrandColors.brands[provider] != nil, "missing brand for \(provider)")
+            #expect(
+                BrandColors.brand(for: provider).iconResourceName != nil,
+                "\(provider) has no real mark to load")
+            #expect(!BrandColors.brand(for: provider).vendor.isEmpty)
         }
 
-        let marks = expected.map { BrandColors.brand(for: $0).mark }
-        #expect(Set(marks).count == marks.count, "two providers share a mark")
-        #expect(!marks.contains(.dot), "the fallback mark must stay reserved")
+        let marks = expected.compactMap { BrandColors.brand(for: $0).iconResourceName }
+        #expect(Set(marks).count == marks.count, "two providers share a mark file")
     }
 
     @Test
@@ -22,11 +25,13 @@ struct BrandColorTests {
         #expect(BrandColors.hex(for: "claude") == "#D97757")
     }
 
+    /// An unknown provider gets no mark at all rather than borrowing another
+    /// vendor's artwork; the app falls back to its own glyph.
     @Test
-    func anUnknownProviderStillRendersWithTheFallback() {
+    func anUnknownProviderHasNoVendorMark() {
         let brand = BrandColors.brand(for: "something-new")
         #expect(brand == BrandColors.fallback)
-        #expect(brand.mark == .dot)
+        #expect(brand.iconResourceName == nil)
     }
 
     /// The marks are drawn on both a light and a dark menu bar, so every brand
