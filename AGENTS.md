@@ -1,6 +1,7 @@
 # Project guidance
 
 - Read `STATUS.md` before substantial work.
+- `README.md` is the landing page only - what QuotaBar is, what it needs, how to build it. How it behaves and why lives in `docs/`, indexed by `docs/README.md`; put reference prose there rather than back in the README.
 - The approved interface reference is `docs/design/` - four HTML mockups plus the review report behind them. Treat the mockups as the acceptance criteria for any change to the popover, the provider pages, the Preferences window, or the menu bar item.
 - Treat `quota-axi --json --full` as the only quota source; never contact provider APIs or read credentials directly.
 - `QuotaAXIRunner` resolves both `quota-axi` and the Node executable its shim invokes, then supplies their directories to the child `PATH`; keep Dock, Spotlight, and login launches independent of a terminal `PATH`.
@@ -19,7 +20,7 @@
 - The gap between the mark and the number is geometry, not typography. `.kern` on the mark's text attachment does nothing at all - TextKit ignores kerning on an attachment glyph, and a settable gap built that way once shipped with its whole range laying out to the same width. An attachment advances by its bounds and nothing else, and bounds that differ from the image stretch the artwork, so the gap lives in the image: `MenuBarMetrics.markTrailingMargin` is the clear space kept and `markTrailingTrim` crops the rest of the plate inset away. Measure a spacing change by rendering it, never by reading the attribute back.
 - A new view that renders a changing number belongs under one of those two roots, or it needs its own tabular-figure setting.
 - Provider visibility is seeded once from the first measurable snapshot and never overridden afterwards. See `ProviderVisibilitySeed`.
-- Verify UI changes with the `QUOTABAR_SELFTEST`, `QUOTABAR_VERIFY` and `QUOTABAR_RENDER` hooks documented in `README.md`; they print evidence without screenshots or system permissions. The self-test must keep reading the real status button: an offscreen-only mark check passed while the real menu bar was empty.
+- Verify UI changes with the `QUOTABAR_SELFTEST`, `QUOTABAR_VERIFY` and `QUOTABAR_RENDER` hooks documented in `docs/verifying-a-build.md`; they print evidence without screenshots or system permissions. The self-test must keep reading the real status button: an offscreen-only mark check passed while the real menu bar was empty.
 - Never read the login-item status outside an open Preferences window, and never register a login item unprompted. Both trip a system permission dialog.
 - Tests and the render hook use `InMemoryPreferenceStore`, never a scratch `UserDefaults` suite, which leaves a plist in `~/Library/Preferences` on every run.
 - Run `./test.sh` and `./build.sh` before delivery.
