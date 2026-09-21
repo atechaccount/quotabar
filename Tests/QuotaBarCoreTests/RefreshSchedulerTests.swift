@@ -81,13 +81,17 @@ struct RefreshSchedulerTests {
         let clock = ManualClock()
         let runner = GatedRunner(snapshot: try snapshot())
         let events = EventRecorder()
+        let ticks = TickRecorder()
         let coordinator = RefreshCoordinator(
             runner: { _ in try await runner.run() },
             eventHandler: { await events.record($0) })
         let scheduler = MonotonicRefreshScheduler(
             intervalSeconds: 1,
             clock: clock.schedulerClock,
-            tick: { reason in await coordinator.request(reason: reason, readOnly: false) })
+            tick: { reason in
+                await ticks.record(reason)
+                await coordinator.request(reason: reason, readOnly: false)
+            })
 
         await scheduler.start()
         let firstSleep = await waitUntil { await clock.waiterCount == 1 }
@@ -111,8 +115,10 @@ struct RefreshSchedulerTests {
         await events.waitForSecondFinishedEvent()
         let coalescedRunCount = await runner.callCount
         let finishedCount = await events.finishedCount
+        let reasons = await ticks.reasons
         #expect(coalescedRunCount == 2)
         #expect(finishedCount == 2)
+        #expect(reasons == [.scheduled, .scheduled, .scheduled, .scheduled])
         let maximumConcurrentRuns = await runner.maximumConcurrentRuns
         #expect(maximumConcurrentRuns == 1)
         await scheduler.stop()
