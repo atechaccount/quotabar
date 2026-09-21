@@ -133,27 +133,29 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let titleFont = font(for: appearance.font)
         let attachment = NSTextAttachment()
         attachment.image = mark
-        let side = ProviderMarkImage.menuBarSide(for: appearance)
+        // The attachment reserves exactly the image, never a box of its own.
+        //
+        // This is the whole mechanism behind the mark-to-number gap, and it is
+        // the second thing tried. The first set the gap as `.kern` on this
+        // attachment character, and TextKit ignores kerning on an attachment
+        // glyph - measured across the setting's entire range, every value laid
+        // the item out to the same width, to three decimal places. An
+        // attachment advances by its bounds and by nothing else, and bounds
+        // that differ from the image stretch the artwork, so the only honest
+        // place for the gap is the image itself. `ProviderMarkImage` crops it
+        // there; this reserves what it produced.
+        //
         // Centred on the text's own cap height, so the mark sits on the same
         // optical line as the digits rather than on the text baseline.
         attachment.bounds = NSRect(
             x: 0,
-            y: (titleFont.capHeight - side) / 2,
-            width: side,
-            height: side)
+            y: (titleFont.capHeight - mark.size.height) / 2,
+            width: mark.size.width,
+            height: mark.size.height)
 
         let title = NSMutableAttributedString(attachment: attachment)
         guard !percent.isEmpty else { return title }
 
-        // The mark image carries its backing inset of transparent padding on its
-        // trailing edge, which is part of what the eye reads as the gap, so the
-        // kern only has to make up the difference. That inset scales with the
-        // mark, so the kern is derived from it rather than written down: the
-        // whole gap works out to `menuBarGap` at any size.
-        let kern = ProviderMarkImage.menuBarGap(for: appearance, side: side)
-            - ProviderMarkImage.menuBarBackingInset(for: side)
-        title.addAttribute(
-            .kern, value: kern, range: NSRange(location: title.length - 1, length: 1))
         let numberStart = title.length
         title.append(NSAttributedString(string: percent, attributes: [
             .font: titleFont,
@@ -371,11 +373,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// saying why it comes back. At the time the mark and the number were
     /// separated by AppKit's own ~15pt, so the column opened on top of a gap
     /// that was already far too wide and the whole readout drifted away from its
-    /// mark. That gap is now the captain's `menuBarGap` setting, set by the kern in
-    /// `statusTitle`, and the kern is applied to the mark rather than to the
-    /// number - so the column starts hard against the mark at every value, and
-    /// what sits between them is the reserved room for the hundreds digit rather
-    /// than spacing.
+    /// mark. That gap is now `MenuBarMetrics.markTrailingMargin`, cropped into
+    /// the mark's own image rather than spent on spacing - so the column starts
+    /// hard against the mark at every value, and what sits between them is the
+    /// reserved room for the hundreds digit rather than spacing.
     static func reservedPercent(_ value: Double) -> String {
         let text = QuotaFormatting.percent(value)
         let digits = text.filter(\.isNumber).count

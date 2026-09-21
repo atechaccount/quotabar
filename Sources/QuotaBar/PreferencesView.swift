@@ -269,17 +269,6 @@ struct PreferencesView: View {
                     .frame(width: 110)
             }
 
-            Divider()
-            PreferenceRow(
-                title: "Icon and number spacing",
-                note: "The tightest setting still leaves visible space between the mark and readout.")
-            {
-                let side = MenuBarMetrics.markSide(for: preferences.menuBarAppearance)
-                Slider(
-                    value: $preferences.menuBarAppearance.markGap,
-                    in: MenuBarMetrics.gapRange(for: side).doubleRange)
-                    .frame(width: 110)
-            }
         }
     }
 

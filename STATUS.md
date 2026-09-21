@@ -19,13 +19,23 @@
 
 ## Recent round
 
+The menu bar icon sits closer to the percentage, and the spacing slider is gone.
+
+- **The spacing setting never worked.** It was applied as `.kern` on the mark's text attachment, and TextKit ignores kerning on an attachment glyph: measured across the whole range the setting could reach, every value laid the item out to exactly the same width, to three decimal places. The captain was right that moving the slider did nothing, and right that the app could go tighter; the reason was the mechanism, not the app.
+- **The gap is geometry now.** An attachment advances by its image and by nothing else, and bounds that differ from the image stretch the artwork, so the clear space after the mark is part of the mark's own image. `MenuBarMetrics.markTrailingMargin` is that space, 0.7pt, and `markTrailingTrim` crops the rest of the plate inset away.
+- **Measured, not reasoned about.** The real limit is where the mark's rendered ink meets the first glyph of the readout, so both were rasterised at 32 samples per point across every face, every readout width and both ends of the mark size range. At the shipped mark size the ink-to-ink gap goes from 3.19pt to 2.19pt for the app's own glyph and from 4.56pt to 3.56pt for Claude's, whose artwork carries 1.36pt of its own padding. The tightest case the settings can reach - the app glyph, whose ink fills its box, in front of the `?` of an unknown readout, whose left bearing is the smallest of any leading glyph - still renders 1.06pt of clear space, two device pixels on a Retina display. That is the floor 0.7pt was chosen to hold.
+- **The setting is gone, not hidden.** The stored `menuBarMarkGap` key, the slider and the `MenuBarAppearance` field are all removed, and an install that moved that slider has the dead key cleared on first launch - the same tidy-up the retired greyscale mark style does. Verified against the real preferences on this machine: the key was there before the run and absent after. The icon size setting is untouched.
+- `MenuBarMetrics.markTrailingMargin` is a hard floor with no control in front of it, and `LayoutStabilityTests` plus the self-test's `menubargap` sweep - now `margin=` and `floorHeld=` - hold it there.
+
+## Previous round
+
 The overview rows now carry the reset countdown.
 
 - **Each overview row says when its headline window comes back.** The countdown sits under the percentage and its window label, in the same reserved right-hand column, drawn by the same `QuotaFormatting.resetLine` the provider pages use - one implementation, not two. A provider that reports no reset time draws no line at all rather than a dash, because the row has no space to spend on a value nobody reported; the provider pages, which have a reserved line to fill, still say "No reset time".
 - Measured before and after on the built bundle: the Overview page goes from 630pt to 663pt, exactly one caption line per row across three rows. The panel width holds at 430, every provider page still settles at its 468pt floor, and the self-test reports `oneWidth=true pagesThatChangedSize=none`. Neither `Layout.popoverWidth` nor `Layout.minContentHeight` nor `Layout.maxContentHeight` was touched.
 - `OverviewResetTests` covers both cases by rasterising the row: with a reset it is one caption line taller, and without one the band that line would occupy is completely empty. It also checks every shape the countdown can take against the reserved column width, so none of them truncates.
 
-## Previous round
+## Round before that
 
 **The menu bar item is smaller.** The mark and its number now come from one place, `MenuBarMetrics`: a design size each - the 20pt mark against the 13pt system font the item was first built at - and a single `scale` factor, shipped at 0.85, so the pair cannot drift out of proportion with each other. The mark is 17pt and the number 11pt, which takes the whole item from 78pt wide to 70pt. The number's weight steps up to medium to pay for the smaller size on a translucent menu bar. The backing plate's inset became a fraction of the side so it scales too, and the kern is derived from it, which keeps the whole mark-to-number gap on `MenuBarMetrics.gap` at any size; the gap itself is not scaled, because it is an optical minimum rather than a dimension.
 

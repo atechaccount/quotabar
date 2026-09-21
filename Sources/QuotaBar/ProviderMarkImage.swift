@@ -22,6 +22,7 @@ enum ProviderMarkImage {
         let backingColor: String
         let markStyle: String
         let insetMark: Bool
+        let trailingTrim: CGFloat
     }
 
     private static var cache: [CacheKey: NSImage] = [:]
@@ -31,17 +32,13 @@ enum ProviderMarkImage {
     /// `MenuBarMetrics`, which scales it in step with the number beside it.
     static let menuBarSide = MenuBarMetrics.side
 
-    /// The whole gap between the mark and the number beside it in the menu bar.
-    /// Small enough to read as one item, large enough that the glyphs never
-    /// touch at any percentage width.
-    static let menuBarGap = MenuBarMetrics.gap
+    /// The clear space the menu bar image keeps after the mark, before the
+    /// readout. `MenuBarMetrics.markTrailingMargin` is where it is decided and
+    /// why it is that size.
+    static let menuBarGap = MenuBarMetrics.markTrailingMargin
 
     static func menuBarSide(for appearance: MenuBarAppearance) -> CGFloat {
         MenuBarMetrics.markSide(for: appearance)
-    }
-
-    static func menuBarGap(for appearance: MenuBarAppearance, side: CGFloat) -> CGFloat {
-        MenuBarMetrics.markGap(for: appearance, side: side)
     }
 
     /// How far a mark is inset inside its backing plate, for a plate of `side`.
@@ -51,8 +48,9 @@ enum ProviderMarkImage {
         side * MenuBarMetrics.backingInsetFraction
     }
 
-    /// The inset of the menu bar plate specifically, which is the one the status
-    /// item title has to know about to work out its kern.
+    /// The inset of the menu bar plate specifically: the transparent margin the
+    /// mark's own image carries, which `MenuBarMetrics.markTrailingTrim` crops
+    /// back on the trailing edge so the readout can sit closer.
     static let menuBarBackingInset = MenuBarMetrics.side * MenuBarMetrics.backingInsetFraction
 
     static func menuBarBackingInset(for side: CGFloat) -> CGFloat {
@@ -77,7 +75,8 @@ enum ProviderMarkImage {
         side: CGFloat,
         backing: (color: BrandRGB, opacity: Double)? = nil,
         markStyle: MenuBarMarkStyle = .color,
-        insetMark: Bool = false) -> NSImage
+        insetMark: Bool = false,
+        trailingTrim: CGFloat = 0) -> NSImage
     {
         let key = CacheKey(
             provider: provider ?? "",
@@ -86,7 +85,8 @@ enum ProviderMarkImage {
             backingOpacity: backing?.opacity ?? 0,
             backingColor: backing.map { BrandColors.hex(from: $0.color) } ?? "",
             markStyle: markStyle.rawValue,
-            insetMark: insetMark)
+            insetMark: insetMark,
+            trailingTrim: trailingTrim)
         if let cached = cache[key] { return cached }
 
         let made = render(
@@ -95,7 +95,8 @@ enum ProviderMarkImage {
             side: side,
             backing: backing,
             markStyle: markStyle,
-            insetMark: insetMark)
+            insetMark: insetMark,
+            trailingTrim: trailingTrim)
         cache[key] = made
         return made
     }
@@ -113,14 +114,17 @@ enum ProviderMarkImage {
         dark: Bool,
         appearance: MenuBarAppearance = .default) -> NSImage
     {
-        image(
+        let side = menuBarSide(for: appearance)
+        return image(
             provider: provider,
             dark: dark,
-            side: menuBarSide(for: appearance),
+            side: side,
             backing: appearance.markBacking(dark: dark),
             markStyle: appearance.markStyle,
             // Always inset: the mark keeps one size whether or not it is plated.
-            insetMark: true)
+            insetMark: true,
+            // The image is the attachment's advance, so the crop is the gap.
+            trailingTrim: MenuBarMetrics.markTrailingTrim(for: side))
     }
 
     /// Whether a real vendor mark exists and loaded. The self-test asserts this
@@ -191,9 +195,10 @@ enum ProviderMarkImage {
         side: CGFloat,
         backing: (color: BrandRGB, opacity: Double)?,
         markStyle: MenuBarMarkStyle,
-        insetMark: Bool) -> NSImage
+        insetMark: Bool,
+        trailingTrim: CGFloat) -> NSImage
     {
-        let size = NSSize(width: side, height: side)
+        let size = NSSize(width: side - trailingTrim, height: side)
         let inset = insetMark || backing != nil
         let markInset = backingInset(side: side)
         let markSide = inset ? side - markInset * 2 : side
@@ -202,7 +207,9 @@ enum ProviderMarkImage {
               let url = markURL(for: provider),
               let base = NSImage(contentsOf: url)
         else {
-            return appGlyph(side: side, dark: dark, backing: backing, insetMark: insetMark)
+            return appGlyph(
+                side: side, dark: dark, backing: backing, insetMark: insetMark,
+                trailingTrim: trailingTrim)
         }
 
         base.size = NSSize(width: markSide, height: markSide)
@@ -213,7 +220,9 @@ enum ProviderMarkImage {
         let composed = NSImage(size: size, flipped: false) { rect in
             drawBacking(in: rect, backing: backing)
 
-            let markRect = inset ? rect.insetBy(dx: markInset, dy: markInset) : rect
+            let markRect = inset
+                ? NSRect(x: markInset, y: markInset, width: markSide, height: markSide)
+                : NSRect(x: 0, y: 0, width: markSide, height: markSide)
             // The mark is drawn into its own layer so the `.sourceAtop` recolor
             // cannot bleed onto the backing plate underneath it.
             NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -236,10 +245,12 @@ enum ProviderMarkImage {
     private static func drawBacking(in rect: NSRect, backing: (color: BrandRGB, opacity: Double)?) {
         guard let backing, backing.opacity > 0 else { return }
         NSColor(backing.color).withAlphaComponent(backing.opacity).setFill()
-        NSBezierPath(
-            roundedRect: rect,
-            xRadius: rect.width * backingCornerFraction,
-            yRadius: rect.height * backingCornerFraction).fill()
+        // One radius from the shorter side, not one per axis. The menu bar
+        // plate is no longer square - it is cropped on its trailing edge to
+        // bring the readout in - and a radius taken per axis would round its
+        // corners into ellipses.
+        let radius = min(rect.width, rect.height) * backingCornerFraction
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
     }
 
     /// QuotaBar's own mark: three rising bars. Shown only when no provider is
@@ -248,9 +259,10 @@ enum ProviderMarkImage {
         side: CGFloat,
         dark: Bool,
         backing: (color: BrandRGB, opacity: Double)? = nil,
-        insetMark: Bool = false) -> NSImage
+        insetMark: Bool = false,
+        trailingTrim: CGFloat = 0) -> NSImage
     {
-        let size = NSSize(width: side, height: side)
+        let size = NSSize(width: side - trailingTrim, height: side)
         let inset = insetMark || backing != nil
         let markInset = backingInset(side: side)
         let ink = dark
@@ -260,7 +272,11 @@ enum ProviderMarkImage {
         let image = NSImage(size: size, flipped: false) { rect in
             drawBacking(in: rect, backing: backing)
 
-            let box = inset ? rect.insetBy(dx: markInset, dy: markInset) : rect
+            let box = inset
+                ? NSRect(
+                    x: markInset, y: markInset,
+                    width: side - markInset * 2, height: side - markInset * 2)
+                : NSRect(x: 0, y: 0, width: side, height: side)
             let width = max(2, box.width / 5)
             let gap = (box.width - width * 3) / 2
             let heights = [box.height * 0.45, box.height * 0.72, box.height]

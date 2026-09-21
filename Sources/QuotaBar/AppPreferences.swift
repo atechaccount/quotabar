@@ -30,7 +30,6 @@ final class AppPreferences: ObservableObject {
         static let textColorHex = "menuBarTextColorHex"
         static let readoutFont = "menuBarReadoutFont"
         static let markSize = "menuBarMarkSize"
-        static let markGap = "menuBarMarkGap"
     }
 
     private let defaults: PreferenceStore
@@ -97,6 +96,14 @@ final class AppPreferences: ObservableObject {
         if defaults.string(forKey: Key.markStyle) == MenuBarMarkStyle.retiredGreyscaleRawValue {
             defaults.set(menuBarAppearance.markStyle.rawValue, forKey: Key.markStyle)
         }
+        // A setting that is gone entirely, rather than one that moved: nothing
+        // reads these any more, so an install that stored one comes up on the
+        // current default whether or not they are cleared. They are cleared
+        // anyway, so the plist does not keep a value no build will ever use
+        // again - the same tidy-up the greyscale migration does above.
+        for key in MenuBarAppearance.retiredDefaultsKeys where defaults.object(forKey: key) != nil {
+            defaults.set(nil, forKey: key)
+        }
     }
 
     /// The menu bar's own appearance, which is what a migrated greyscale mark
@@ -134,9 +141,7 @@ final class AppPreferences: ObservableObject {
             textColorHex: defaults.string(forKey: Key.textColorHex) ?? fallback.textColorHex,
             font: choice(Key.readoutFont, fallback.font),
             markSize: defaults.object(forKey: Key.markSize) == nil
-                ? fallback.markSize : defaults.double(forKey: Key.markSize),
-            markGap: defaults.object(forKey: Key.markGap) == nil
-                ? fallback.markGap : defaults.double(forKey: Key.markGap))
+                ? fallback.markSize : defaults.double(forKey: Key.markSize))
     }
 
     private func write(_ appearance: MenuBarAppearance) {
@@ -149,7 +154,6 @@ final class AppPreferences: ObservableObject {
         defaults.set(appearance.textColorHex, forKey: Key.textColorHex)
         defaults.set(appearance.font.rawValue, forKey: Key.readoutFont)
         defaults.set(appearance.markSize, forKey: Key.markSize)
-        defaults.set(appearance.markGap, forKey: Key.markGap)
     }
 
     /// Picks the initial focus from the first real snapshot, once. After that the

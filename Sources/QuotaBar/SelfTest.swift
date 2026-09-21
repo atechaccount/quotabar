@@ -480,48 +480,60 @@ enum SelfTest {
         var smallestAt = "-"
         // Every face, not only the chosen one. The gap is small by design and
         // the item is small, so a face that sets its digits tighter is exactly
-        // where the mark and the number would first run into each other.
-        for side in [MenuBarMetrics.markSizeRange.lowerBound, MenuBarMetrics.markSizeRange.upperBound] {
-            let gapRange = MenuBarMetrics.gapRange(for: side)
-            for configuredGap in [gapRange.lowerBound, gapRange.upperBound] {
-                for face in MenuBarFontChoice.allCases {
-                    var variant = appearance
-                    variant.markSize = Double(side)
-                    variant.markGap = Double(configuredGap)
-                    variant.font = face
-                    for dark in [false, true] {
-                        let mark = ProviderMarkImage.menuBarImage(
-                            provider: provider, dark: dark, appearance: variant)
-                        let readouts: [(name: String, percent: String)] = [
-                            ("100%", StatusItemController.reservedPercent(100)),
-                            ("unknown", StatusItemController.reservedUnknown()),
-                        ]
-                        for readout in readouts {
-                            button.attributedTitle = StatusItemController.statusTitle(
-                                mark: mark,
-                                percent: readout.percent,
-                                appearance: variant)
-                            button.layoutSubtreeIfNeeded()
-                            let gap = measuredGap(of: button)
-                            let label = String(
-                                format: "%.1f/%.1f/%@/%@/%@", side, configuredGap,
-                                face.rawValue, dark ? "dark" : "light", readout.name)
-                            if let gap, gap < smallest {
-                                smallest = gap
-                                smallestAt = label
-                            }
-                            measurements.append(String(
-                                format: "%@=%@", label,
-                                gap.map { String(format: "%.1f", $0) } ?? "?"))
+        // where the mark and the number would first run into each other. The
+        // readouts are the three widths the captain actually sees plus the
+        // unknown one, whose `?` has the smallest left bearing of any glyph
+        // that can lead the column and is therefore the binding case.
+        for side in [MenuBarMetrics.markSizeRange.lowerBound,
+                     CGFloat(MenuBarAppearance.defaultMarkSize),
+                     MenuBarMetrics.markSizeRange.upperBound] {
+            for face in MenuBarFontChoice.allCases {
+                var variant = appearance
+                variant.markSize = Double(side)
+                variant.font = face
+                // No plate, so what is measured is the mark's own ink against
+                // the readout's. A plate counts as ink and would hide the mark
+                // behind its own edge; `appearancesweep` is where plates are
+                // checked.
+                variant.backingScope = .none
+                for dark in [false, true] {
+                    let mark = ProviderMarkImage.menuBarImage(
+                        provider: provider, dark: dark, appearance: variant)
+                    let readouts: [(name: String, percent: String)] = [
+                        ("4%", StatusItemController.reservedPercent(4)),
+                        ("44%", StatusItemController.reservedPercent(44)),
+                        ("100%", StatusItemController.reservedPercent(100)),
+                        ("unknown", StatusItemController.reservedUnknown()),
+                    ]
+                    for readout in readouts {
+                        button.attributedTitle = StatusItemController.statusTitle(
+                            mark: mark,
+                            percent: readout.percent,
+                            appearance: variant)
+                        button.layoutSubtreeIfNeeded()
+                        let gap = measuredGap(of: button)
+                        let label = String(
+                            format: "%.1f/%@/%@/%@", side,
+                            face.rawValue, dark ? "dark" : "light", readout.name)
+                        if let gap, gap < smallest {
+                            smallest = gap
+                            smallestAt = label
                         }
+                        measurements.append(String(
+                            format: "%@=%@", label,
+                            gap.map { String(format: "%.1f", $0) } ?? "?"))
                     }
                 }
             }
         }
 
+        // The floor: the margin the image keeps plus the smallest left bearing
+        // any leading glyph has. Anything under a point here is a smudge.
         print("SELFTEST menubargap \(measurements.joined(separator: " ")) "
-            + String(format: "smallest=%.1fpt at=%@ touching=%@",
-                     smallest, smallestAt, smallest <= 0 ? "YES" : "no"))
+            + String(format: "margin=%.2f smallest=%.1fpt at=%@ touching=%@ floorHeld=%@",
+                     MenuBarMetrics.markTrailingMargin,
+                     smallest, smallestAt, smallest <= 0 ? "YES" : "no",
+                     smallest >= MenuBarMetrics.markTrailingMargin ? "yes" : "NO"))
     }
 
     /// The widest run of empty columns between the first and last ink in the

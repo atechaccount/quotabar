@@ -36,8 +36,7 @@ struct MenuBarAppearanceRenderingTests {
             textColorStyle: .custom,
             textColorHex: "#FF8800",
             font: .serif,
-            markSize: 19,
-            markGap: 1.8)
+            markSize: 19)
         preferences.menuBarAppearance = chosen
 
         // The same store, read by a fresh instance: this is what a relaunch is.
@@ -72,6 +71,24 @@ struct MenuBarAppearanceRenderingTests {
             let relaunched = AppPreferences(defaults: store, darkMenuBar: !dark)
             #expect(relaunched.menuBarAppearance.markStyle == expected)
         }
+    }
+
+    /// The retired mark-to-number gap: an install that moved that slider has a
+    /// value on disk for a setting that no longer exists. It must come up on
+    /// the current default and leave nothing behind.
+    @Test
+    func aStoredMarkGapIsDroppedRatherThanRead() {
+        let store = InMemoryPreferenceStore(["menuBarMarkGap": 3.4, "menuBarMarkSize": 19.0])
+        let preferences = AppPreferences(defaults: store)
+
+        // The setting it sat next to is untouched; the retired one is gone.
+        #expect(preferences.menuBarAppearance.markSize == 19)
+        #expect(store.object(forKey: "menuBarMarkGap") == nil)
+
+        // And a write of the appearance does not put it back.
+        preferences.menuBarAppearance.markStyle = .black
+        #expect(store.object(forKey: "menuBarMarkGap") == nil)
+        #expect(reopened(store).menuBarAppearance.markSize == 19)
     }
 
     /// A stored value QuotaBar no longer understands must not take the menu bar

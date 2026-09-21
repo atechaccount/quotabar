@@ -146,7 +146,6 @@ public struct MenuBarAppearance: Equatable, Sendable {
     public var textColorHex: String
     public var font: MenuBarFontChoice
     public var markSize: Double
-    public var markGap: Double
 
     public init(
         backingScope: MenuBarBackingScope = .mark,
@@ -157,8 +156,7 @@ public struct MenuBarAppearance: Equatable, Sendable {
         textColorStyle: MenuBarTextColorStyle = .automatic,
         textColorHex: String = MenuBarAppearance.defaultCustomTextHex,
         font: MenuBarFontChoice = .system,
-        markSize: Double = MenuBarAppearance.defaultMarkSize,
-        markGap: Double = MenuBarAppearance.defaultMarkGap)
+        markSize: Double = MenuBarAppearance.defaultMarkSize)
     {
         self.backingScope = backingScope
         self.markStyle = markStyle
@@ -169,7 +167,6 @@ public struct MenuBarAppearance: Equatable, Sendable {
         self.textColorHex = textColorHex
         self.font = font
         self.markSize = markSize
-        self.markGap = markGap
     }
 
     /// The presentation QuotaBar shipped before any of this was configurable.
@@ -183,9 +180,17 @@ public struct MenuBarAppearance: Equatable, Sendable {
     public static let defaultCustomTextHex = "#FFFFFF"
 
     /// The current 85% menu-bar scale resolves the original 20pt mark to 17pt.
-    /// The gap is deliberately tighter than the former 1.5pt shipped spacing.
     public static let defaultMarkSize = 17.0
-    public static let defaultMarkGap = 1.0
+
+    /// Settings this type used to carry, kept only so a stored value written by
+    /// an older build can be cleared rather than left to rot in the plist.
+    ///
+    /// `menuBarMarkGap` was a settable mark-to-number gap. It was removed
+    /// because it never reached the drawing: the spacing was applied as `.kern`
+    /// on the mark's text attachment, and TextKit ignores kerning on an
+    /// attachment glyph, so every value in its range laid out identically. The
+    /// spacing is geometry now - see `MenuBarMetrics.markTrailingMargin`.
+    public static let retiredDefaultsKeys = ["menuBarMarkGap"]
 
     /// Deliberately faint. The backing keeps a coloured mark legible when a
     /// bright or busy wallpaper shows through a translucent menu bar; anything

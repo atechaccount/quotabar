@@ -46,18 +46,6 @@ enum MenuBarMetrics {
         min(max(CGFloat(appearance.markSize), markSizeRange.lowerBound), markSizeRange.upperBound)
     }
 
-    /// Half the trailing plate inset is still visible geometry, not an arbitrary
-    /// number: at the tightest setting it leaves real space between the ink and
-    /// the first readout glyph.
-    static func gapRange(for side: CGFloat) -> ClosedRange<CGFloat> {
-        (side * backingInsetFraction / 2)...(side * 0.2)
-    }
-
-    static func markGap(for appearance: MenuBarAppearance, side: CGFloat) -> CGFloat {
-        let range = gapRange(for: side)
-        return min(max(CGFloat(appearance.markGap), range.lowerBound), range.upperBound)
-    }
-
     /// The number's point size.
     static let titleSize = rounded(designTitleSize * scale)
 
@@ -89,12 +77,44 @@ enum MenuBarMetrics {
     /// quota fell.
     static let plateHugFraction: CGFloat = 0.12
 
-    /// The whole gap between the mark and the number beside it.
+    /// The clear space left after the mark's own box, before the readout starts.
     ///
-    /// Not scaled. This is an optical minimum rather than a dimension of the
-    /// item: it is already as small as it can be while keeping the glyphs from
-    /// running into each other at every digit count, and shrinking it with
-    /// everything else would spend the only margin there is. The self-test's
-    /// `menubargap` sweep is what holds it above zero.
-    static let gap: CGFloat = MenuBarAppearance.defaultMarkGap
+    /// This is the whole of QuotaBar's contribution to the mark-to-number gap,
+    /// and it is the only part of it the app controls. What the eye reads as the
+    /// gap is this margin, plus whatever transparent padding the vendor drew
+    /// into its own artwork, plus the left side bearing of the readout's first
+    /// glyph - and the last of those is the font's, not ours.
+    ///
+    /// It used to be a setting. It never worked: the spacing was applied as
+    /// `.kern` on the mark's text attachment and TextKit ignores kerning on an
+    /// attachment glyph, so the slider's whole range laid out identically.
+    /// Spacing a text attachment is geometry, not typography - the attachment
+    /// advances by its image's width and by nothing else - so the margin is part
+    /// of the image now and `markTrailingTrim` is what crops it to this size.
+    ///
+    /// Not scaled, and a hard floor rather than a starting point. It is measured
+    /// against the tightest case the settings can produce - the app's own glyph,
+    /// whose ink fills its box, in front of the `?` of an unknown readout, whose
+    /// left bearing is the smallest of any leading glyph - and at 0.7pt that
+    /// case still renders about a point of clear space, two device pixels on a
+    /// Retina display. Below this the two run together into one smudge. The
+    /// self-test's `menubargap` sweep is what holds it there.
+    static let markTrailingMargin: CGFloat = 0.7
+
+    /// How much of the mark image's trailing edge is cropped away, which is the
+    /// same thing as how far the readout moves in towards the mark.
+    ///
+    /// The mark is drawn inset inside its plate, so the image already carried a
+    /// full inset of transparent padding after the ink; all but
+    /// `markTrailingMargin` of that is spare room, and this spends it. Never
+    /// more than the inset, or the crop would reach the ink itself.
+    static func markTrailingTrim(for side: CGFloat) -> CGFloat {
+        max(0, side * backingInsetFraction - markTrailingMargin)
+    }
+
+    /// The mark image's width: its square box, less the trailing crop. The
+    /// height stays the full box, because that is the item's vertical lane.
+    static func markImageWidth(for side: CGFloat) -> CGFloat {
+        side - markTrailingTrim(for: side)
+    }
 }

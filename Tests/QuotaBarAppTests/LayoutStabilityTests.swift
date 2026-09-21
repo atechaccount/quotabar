@@ -122,10 +122,10 @@ struct LayoutStabilityTests {
         #expect(ProviderMarkImage.menuBarSide == MenuBarMetrics.side)
     }
 
-    /// The gap between the mark and the number is the attachment's own trailing
-    /// padding plus the kern, and that padding shrinks with the mark. The kern is
-    /// derived from it so the whole gap lands on `menuBarGap` at any size - the
-    /// property that keeps the glyphs from running into each other.
+    /// The gap between the mark and the number is geometry: the mark image is
+    /// cropped on its trailing edge to exactly `markTrailingMargin` of clear
+    /// space, and the attachment advances by that image. It has to hold at every
+    /// mark size, because the crop is taken out of an inset that scales.
     @Test
     func theGapSurvivesTheMarkChangingSize() {
         let inset = ProviderMarkImage.menuBarBackingInset
@@ -133,44 +133,56 @@ struct LayoutStabilityTests {
             inset > 0 && inset < ProviderMarkImage.menuBarSide / 2,
             "the backing plate swallowed its mark: inset \(inset)")
 
-        let kern = ProviderMarkImage.menuBarGap - inset
         #expect(
-            abs((inset + kern) - ProviderMarkImage.menuBarGap) < 0.001,
-            "the gap no longer works out to menuBarGap")
-        #expect(
-            inset + kern > 0,
-            "a zero gap lets the mark and the number intersect")
+            MenuBarMetrics.markTrailingMargin > 0,
+            "a zero margin lets the mark and the number intersect")
+
+        for side in [MenuBarMetrics.markSizeRange.lowerBound,
+                     CGFloat(MenuBarAppearance.defaultMarkSize),
+                     MenuBarMetrics.markSizeRange.upperBound] {
+            let trim = MenuBarMetrics.markTrailingTrim(for: side)
+            let inset = ProviderMarkImage.menuBarBackingInset(for: side)
+            #expect(
+                trim < inset,
+                "the crop reached past the plate inset into the mark's own ink at \(side)")
+            #expect(
+                abs((inset - trim) - MenuBarMetrics.markTrailingMargin) < 0.001,
+                "the clear space after the mark is no longer markTrailingMargin at \(side)")
+            #expect(MenuBarMetrics.markImageWidth(for: side) == side - trim)
+        }
     }
 
-    /// The two controls meet at their tightest values. The attachment reserves
-    /// exactly the rendered mark's size, and its geometric trailing inset plus
-    /// the kern leaves a positive gap before every practical readout width.
+    /// The mark size setting never lets the mark meet the readout. The
+    /// attachment reserves exactly the rendered image - which is the mark's box
+    /// less the trailing crop - so the clear space after the ink is the margin
+    /// at every size the captain can choose, and at every readout width.
     @Test
     func theAppearanceControlsNeverLetTheMarkMeetTheReadout() throws {
-        for size in [MenuBarMetrics.markSizeRange.lowerBound, MenuBarMetrics.markSizeRange.upperBound] {
-            let gapRange = MenuBarMetrics.gapRange(for: size)
-            for chosenGap in [gapRange.lowerBound, gapRange.upperBound] {
-                var appearance = MenuBarAppearance.default
-                appearance.markSize = Double(size)
-                appearance.markGap = Double(chosenGap)
-                let side = ProviderMarkImage.menuBarSide(for: appearance)
-                let gap = ProviderMarkImage.menuBarGap(for: appearance, side: side)
-                let inset = ProviderMarkImage.menuBarBackingInset(for: side)
+        for size in [MenuBarMetrics.markSizeRange.lowerBound,
+                     CGFloat(MenuBarAppearance.defaultMarkSize),
+                     MenuBarMetrics.markSizeRange.upperBound] {
+            var appearance = MenuBarAppearance.default
+            appearance.markSize = Double(size)
+            let side = ProviderMarkImage.menuBarSide(for: appearance)
+            let inset = ProviderMarkImage.menuBarBackingInset(for: side)
+            let trim = MenuBarMetrics.markTrailingTrim(for: side)
 
-                #expect(side == size, "the selected mark no longer owns its reserved attachment")
-                #expect(gap >= MenuBarMetrics.gapRange(for: side).lowerBound)
-                #expect(gap > 0 && inset + (gap - inset) > 0, "the mark can touch the readout")
+            #expect(side == size, "the selected mark no longer owns its reserved attachment")
+            #expect(inset - trim >= MenuBarMetrics.markTrailingMargin - 0.001,
+                    "the mark can touch the readout")
 
-                let mark = ProviderMarkImage.menuBarImage(
-                    provider: "claude", dark: false, appearance: appearance)
-                for value in [4.0, 44, 100] {
-                    let title = StatusItemController.statusTitle(
-                        mark: mark,
-                        percent: StatusItemController.reservedPercent(value),
-                        appearance: appearance)
-                    let attachment = try #require(StatusItemController.markImage(in: title))
-                    #expect(attachment.size.width == side && attachment.size.height == side)
-                }
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: false, appearance: appearance)
+            for value in [4.0, 44, 100] {
+                let title = StatusItemController.statusTitle(
+                    mark: mark,
+                    percent: StatusItemController.reservedPercent(value),
+                    appearance: appearance)
+                let attachment = try #require(StatusItemController.markImage(in: title))
+                // Cropped on the trailing edge only: the height is still the
+                // full box, which is the item's vertical lane.
+                #expect(attachment.size.width == side - trim)
+                #expect(attachment.size.height == side)
             }
         }
     }
