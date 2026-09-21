@@ -105,9 +105,16 @@ struct RefreshSchedulerTests {
             #expect(nextSleep)
             await clock.advance(by: .seconds(1))
         }
+        // Advancing the manual clock only releases its waiter. Wait until that tick
+        // completes before releasing the first run, or it can create another follow-up.
+        let finalSleep = await waitUntil { await clock.waiterCount == 1 }
+        #expect(finalSleep)
         let callsWhileBlocked = await runner.callCount
         #expect(callsWhileBlocked == 1)
+        let reasons = await ticks.reasons
+        #expect(reasons == [.scheduled, .scheduled, .scheduled, .scheduled])
 
+        await scheduler.stop()
         await runner.releaseFirstRun()
         // The coordinator has already recorded the coalesced request. Wait for its
         // causal effects instead of letting suite load expire a wall-clock poll.
@@ -115,13 +122,10 @@ struct RefreshSchedulerTests {
         await events.waitForSecondFinishedEvent()
         let coalescedRunCount = await runner.callCount
         let finishedCount = await events.finishedCount
-        let reasons = await ticks.reasons
         #expect(coalescedRunCount == 2)
         #expect(finishedCount == 2)
-        #expect(reasons == [.scheduled, .scheduled, .scheduled, .scheduled])
         let maximumConcurrentRuns = await runner.maximumConcurrentRuns
         #expect(maximumConcurrentRuns == 1)
-        await scheduler.stop()
     }
 
     private func snapshot() throws -> QuotaSnapshot {
