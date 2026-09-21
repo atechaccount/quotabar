@@ -105,10 +105,14 @@ struct RefreshSchedulerTests {
         #expect(callsWhileBlocked == 1)
 
         await runner.releaseFirstRun()
-        let coalescedRun = await waitUntil { await runner.callCount == 2 }
-        #expect(coalescedRun)
-        let finished = await waitUntil { await events.finishedCount == 2 }
-        #expect(finished)
+        // The coordinator has already recorded the coalesced request. Wait for its
+        // causal effects instead of letting suite load expire a wall-clock poll.
+        await runner.waitForFollowUpRun()
+        await events.waitForSecondFinishedEvent()
+        let coalescedRunCount = await runner.callCount
+        let finishedCount = await events.finishedCount
+        #expect(coalescedRunCount == 2)
+        #expect(finishedCount == 2)
         let maximumConcurrentRuns = await runner.maximumConcurrentRuns
         #expect(maximumConcurrentRuns == 1)
         await scheduler.stop()
@@ -203,6 +207,7 @@ private actor GatedRunner {
     private(set) var callCount = 0
     private(set) var maximumConcurrentRuns = 0
     private var activeRuns = 0
+    private var followUpRunContinuation: CheckedContinuation<Void, Never>?
 
     init(snapshot: QuotaSnapshot) {
         self.snapshot = snapshot
@@ -210,6 +215,10 @@ private actor GatedRunner {
 
     func run() async throws -> QuotaSnapshot {
         callCount += 1
+        if callCount == 2 {
+            followUpRunContinuation?.resume()
+            followUpRunContinuation = nil
+        }
         activeRuns += 1
         maximumConcurrentRuns = max(maximumConcurrentRuns, activeRuns)
         if callCount == 1 {
@@ -223,12 +232,18 @@ private actor GatedRunner {
         gate?.resume()
         gate = nil
     }
+
+    func waitForFollowUpRun() async {
+        guard callCount < 2 else { return }
+        await withCheckedContinuation { followUpRunContinuation = $0 }
+    }
 }
 
 private actor EventRecorder {
     private(set) var finishedCount = 0
     private(set) var failureCount = 0
     private(set) var successCount = 0
+    private var secondFinishedEventContinuation: CheckedContinuation<Void, Never>?
 
     func record(_ event: RefreshEvent) {
         guard case let .finished(_, result) = event else { return }
@@ -237,6 +252,15 @@ private actor EventRecorder {
         case .success: successCount += 1
         case .failure: failureCount += 1
         }
+        if finishedCount == 2 {
+            secondFinishedEventContinuation?.resume()
+            secondFinishedEventContinuation = nil
+        }
+    }
+
+    func waitForSecondFinishedEvent() async {
+        guard finishedCount < 2 else { return }
+        await withCheckedContinuation { secondFinishedEventContinuation = $0 }
     }
 }
 
