@@ -35,7 +35,9 @@ struct MenuBarAppearanceRenderingTests {
             backingOpacity: 0.24,
             textColorStyle: .custom,
             textColorHex: "#FF8800",
-            font: .serif)
+            font: .serif,
+            markSize: 19,
+            markGap: 1.8)
         preferences.menuBarAppearance = chosen
 
         // The same store, read by a fresh instance: this is what a relaunch is.

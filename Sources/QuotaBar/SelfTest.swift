@@ -223,7 +223,7 @@ enum SelfTest {
                     appearance: plated)
                 button.layoutSubtreeIfNeeded()
                 let bounds = button.bounds
-                let frame = StatusItemController.wholeItemPlateFrame(in: button)
+                let frame = StatusItemController.wholeItemPlateFrame(in: button, appearance: plated)
                 widths.insert(Int((frame.width * 10).rounded()))
                 entries.append(String(
                     format: "%.0f%%=item%.1f/plate%.1f/pad%.1f",
@@ -263,7 +263,9 @@ enum SelfTest {
 
         button.cacheDisplay(in: bounds, to: bitmap)
 
-        let markWidth = min(bitmap.pixelsWide, Int((ProviderMarkImage.menuBarSide + 6)
+        let markSide = StatusItemController.markImage(in: button.attributedTitle)?.size.width
+            ?? ProviderMarkImage.menuBarSide
+        let markWidth = min(bitmap.pixelsWide, Int((markSide + 6)
             / max(bounds.width, 1) * CGFloat(bitmap.pixelsWide)))
         var markInk = 0
         var totalInk = 0
@@ -479,32 +481,40 @@ enum SelfTest {
         // Every face, not only the chosen one. The gap is small by design and
         // the item is small, so a face that sets its digits tighter is exactly
         // where the mark and the number would first run into each other.
-        for face in MenuBarFontChoice.allCases {
-            var variant = appearance
-            variant.font = face
-            for dark in [false, true] {
-                let mark = ProviderMarkImage.menuBarImage(
-                    provider: provider, dark: dark, appearance: variant)
-                let readouts: [(name: String, percent: String)] = [
-                    ("100%", StatusItemController.reservedPercent(100)),
-                    ("unknown", StatusItemController.reservedUnknown()),
-                ]
-                for readout in readouts {
-                    button.attributedTitle = StatusItemController.statusTitle(
-                        mark: mark,
-                        percent: readout.percent,
-                        appearance: variant)
-                    button.layoutSubtreeIfNeeded()
-                    let gap = measuredGap(of: button)
-                    let label = String(
-                        format: "%@/%@/%@", face.rawValue, dark ? "dark" : "light", readout.name)
-                    if let gap, gap < smallest {
-                        smallest = gap
-                        smallestAt = label
+        for side in [MenuBarMetrics.markSizeRange.lowerBound, MenuBarMetrics.markSizeRange.upperBound] {
+            let gapRange = MenuBarMetrics.gapRange(for: side)
+            for configuredGap in [gapRange.lowerBound, gapRange.upperBound] {
+                for face in MenuBarFontChoice.allCases {
+                    var variant = appearance
+                    variant.markSize = Double(side)
+                    variant.markGap = Double(configuredGap)
+                    variant.font = face
+                    for dark in [false, true] {
+                        let mark = ProviderMarkImage.menuBarImage(
+                            provider: provider, dark: dark, appearance: variant)
+                        let readouts: [(name: String, percent: String)] = [
+                            ("100%", StatusItemController.reservedPercent(100)),
+                            ("unknown", StatusItemController.reservedUnknown()),
+                        ]
+                        for readout in readouts {
+                            button.attributedTitle = StatusItemController.statusTitle(
+                                mark: mark,
+                                percent: readout.percent,
+                                appearance: variant)
+                            button.layoutSubtreeIfNeeded()
+                            let gap = measuredGap(of: button)
+                            let label = String(
+                                format: "%.1f/%.1f/%@/%@/%@", side, configuredGap,
+                                face.rawValue, dark ? "dark" : "light", readout.name)
+                            if let gap, gap < smallest {
+                                smallest = gap
+                                smallestAt = label
+                            }
+                            measurements.append(String(
+                                format: "%@=%@", label,
+                                gap.map { String(format: "%.1f", $0) } ?? "?"))
+                        }
                     }
-                    measurements.append(String(
-                        format: "%@=%@", label,
-                        gap.map { String(format: "%.1f", $0) } ?? "?"))
                 }
             }
         }

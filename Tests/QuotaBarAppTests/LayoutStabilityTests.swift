@@ -142,6 +142,39 @@ struct LayoutStabilityTests {
             "a zero gap lets the mark and the number intersect")
     }
 
+    /// The two controls meet at their tightest values. The attachment reserves
+    /// exactly the rendered mark's size, and its geometric trailing inset plus
+    /// the kern leaves a positive gap before every practical readout width.
+    @Test
+    func theAppearanceControlsNeverLetTheMarkMeetTheReadout() throws {
+        for size in [MenuBarMetrics.markSizeRange.lowerBound, MenuBarMetrics.markSizeRange.upperBound] {
+            let gapRange = MenuBarMetrics.gapRange(for: size)
+            for chosenGap in [gapRange.lowerBound, gapRange.upperBound] {
+                var appearance = MenuBarAppearance.default
+                appearance.markSize = Double(size)
+                appearance.markGap = Double(chosenGap)
+                let side = ProviderMarkImage.menuBarSide(for: appearance)
+                let gap = ProviderMarkImage.menuBarGap(for: appearance, side: side)
+                let inset = ProviderMarkImage.menuBarBackingInset(for: side)
+
+                #expect(side == size, "the selected mark no longer owns its reserved attachment")
+                #expect(gap >= MenuBarMetrics.gapRange(for: side).lowerBound)
+                #expect(gap > 0 && inset + (gap - inset) > 0, "the mark can touch the readout")
+
+                let mark = ProviderMarkImage.menuBarImage(
+                    provider: "claude", dark: false, appearance: appearance)
+                for value in [4.0, 44, 100] {
+                    let title = StatusItemController.statusTitle(
+                        mark: mark,
+                        percent: StatusItemController.reservedPercent(value),
+                        appearance: appearance)
+                    let attachment = try #require(StatusItemController.markImage(in: title))
+                    #expect(attachment.size.width == side && attachment.size.height == side)
+                }
+            }
+        }
+    }
+
     /// The captain's own words: 4% should not be two characters where 100% is
     /// four. The item held one width before this, but the number slid left
     /// inside that width as the quota fell, which is a readout that moves in a

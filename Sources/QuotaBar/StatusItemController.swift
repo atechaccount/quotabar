@@ -93,7 +93,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         guard let plate = appearance.itemPlate(dark: dark, open: open) else { return nil }
         return (
             NSColor(plate.color).withAlphaComponent(plate.opacity),
-            ProviderMarkImage.menuBarSide * ProviderMarkImage.backingCornerFraction)
+            ProviderMarkImage.menuBarSide(for: appearance) * ProviderMarkImage.backingCornerFraction)
     }
 
     /// Where that plate goes inside the button: hard against the title, with
@@ -107,9 +107,13 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// keeps one width as the quota falls.
     /// Takes an `NSButton` rather than the status one so the tests can measure
     /// it without a menu bar.
-    static func wholeItemPlateFrame(in button: NSButton) -> NSRect {
+    static func wholeItemPlateFrame(
+        in button: NSButton,
+        appearance: MenuBarAppearance = .default) -> NSRect
+    {
         let bounds = button.bounds
-        let hug = ProviderMarkImage.menuBarSide * MenuBarMetrics.plateHugFraction
+        let side = ProviderMarkImage.menuBarSide(for: appearance)
+        let hug = side * MenuBarMetrics.plateHugFraction
         let titleWidth = button.attributedTitle.size().width
         guard titleWidth > 0, titleWidth + hug * 2 < bounds.width else { return bounds }
         return NSRect(
@@ -129,7 +133,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let titleFont = font(for: appearance.font)
         let attachment = NSTextAttachment()
         attachment.image = mark
-        let side = ProviderMarkImage.menuBarSide
+        let side = ProviderMarkImage.menuBarSide(for: appearance)
         // Centred on the text's own cap height, so the mark sits on the same
         // optical line as the digits rather than on the text baseline.
         attachment.bounds = NSRect(
@@ -146,7 +150,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         // kern only has to make up the difference. That inset scales with the
         // mark, so the kern is derived from it rather than written down: the
         // whole gap works out to `menuBarGap` at any size.
-        let kern = ProviderMarkImage.menuBarGap - ProviderMarkImage.menuBarBackingInset
+        let kern = ProviderMarkImage.menuBarGap(for: appearance, side: side)
+            - ProviderMarkImage.menuBarBackingInset(for: side)
         title.addAttribute(
             .kern, value: kern, range: NSRange(location: title.length - 1, length: 1))
         let numberStart = title.length
@@ -334,7 +339,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         plateLayer.isHidden = false
-        plateLayer.frame = host.convert(Self.wholeItemPlateFrame(in: button), from: button)
+        plateLayer.frame = host.convert(
+            Self.wholeItemPlateFrame(in: button, appearance: appearance), from: button)
         plateLayer.backgroundColor = plate.color.cgColor
         plateLayer.cornerRadius = plate.cornerRadius
         plateLayer.cornerCurve = .continuous
@@ -365,7 +371,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// saying why it comes back. At the time the mark and the number were
     /// separated by AppKit's own ~15pt, so the column opened on top of a gap
     /// that was already far too wide and the whole readout drifted away from its
-    /// mark. That gap is now `menuBarGap`, 1.5pt, set by the kern in
+    /// mark. That gap is now the captain's `menuBarGap` setting, set by the kern in
     /// `statusTitle`, and the kern is applied to the mark rather than to the
     /// number - so the column starts hard against the mark at every value, and
     /// what sits between them is the reserved room for the hundreds digit rather

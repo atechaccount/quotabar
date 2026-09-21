@@ -1,4 +1,5 @@
 import AppKit
+import QuotaBarCore
 
 /// The size of the menu bar item itself, in one place.
 ///
@@ -35,6 +36,27 @@ enum MenuBarMetrics {
 
     /// The whole menu bar image, backing plate included.
     static let side = rounded(designSide * scale)
+
+    /// The menu bar has a fixed vertical lane. Keep two points clear above and
+    /// below the backing plate, and reserve the attachment at this exact size.
+    static let markSizeRange: ClosedRange<CGFloat> = (side * 0.75)...min(
+        designSide, NSStatusBar.system.thickness - 4)
+
+    static func markSide(for appearance: MenuBarAppearance) -> CGFloat {
+        min(max(CGFloat(appearance.markSize), markSizeRange.lowerBound), markSizeRange.upperBound)
+    }
+
+    /// Half the trailing plate inset is still visible geometry, not an arbitrary
+    /// number: at the tightest setting it leaves real space between the ink and
+    /// the first readout glyph.
+    static func gapRange(for side: CGFloat) -> ClosedRange<CGFloat> {
+        (side * backingInsetFraction / 2)...(side * 0.2)
+    }
+
+    static func markGap(for appearance: MenuBarAppearance, side: CGFloat) -> CGFloat {
+        let range = gapRange(for: side)
+        return min(max(CGFloat(appearance.markGap), range.lowerBound), range.upperBound)
+    }
 
     /// The number's point size.
     static let titleSize = rounded(designTitleSize * scale)
@@ -74,5 +96,5 @@ enum MenuBarMetrics {
     /// running into each other at every digit count, and shrinking it with
     /// everything else would spend the only margin there is. The self-test's
     /// `menubargap` sweep is what holds it above zero.
-    static let gap: CGFloat = 1.5
+    static let gap: CGFloat = MenuBarAppearance.defaultMarkGap
 }

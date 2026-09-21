@@ -29,6 +29,8 @@ final class AppPreferences: ObservableObject {
         static let textColorStyle = "menuBarTextColorStyle"
         static let textColorHex = "menuBarTextColorHex"
         static let readoutFont = "menuBarReadoutFont"
+        static let markSize = "menuBarMarkSize"
+        static let markGap = "menuBarMarkGap"
     }
 
     private let defaults: PreferenceStore
@@ -130,7 +132,11 @@ final class AppPreferences: ObservableObject {
                 : defaults.double(forKey: Key.backingOpacity),
             textColorStyle: choice(Key.textColorStyle, fallback.textColorStyle),
             textColorHex: defaults.string(forKey: Key.textColorHex) ?? fallback.textColorHex,
-            font: choice(Key.readoutFont, fallback.font))
+            font: choice(Key.readoutFont, fallback.font),
+            markSize: defaults.object(forKey: Key.markSize) == nil
+                ? fallback.markSize : defaults.double(forKey: Key.markSize),
+            markGap: defaults.object(forKey: Key.markGap) == nil
+                ? fallback.markGap : defaults.double(forKey: Key.markGap))
     }
 
     private func write(_ appearance: MenuBarAppearance) {
@@ -142,6 +148,8 @@ final class AppPreferences: ObservableObject {
         defaults.set(appearance.textColorStyle.rawValue, forKey: Key.textColorStyle)
         defaults.set(appearance.textColorHex, forKey: Key.textColorHex)
         defaults.set(appearance.font.rawValue, forKey: Key.readoutFont)
+        defaults.set(appearance.markSize, forKey: Key.markSize)
+        defaults.set(appearance.markGap, forKey: Key.markGap)
     }
 
     /// Picks the initial focus from the first real snapshot, once. After that the

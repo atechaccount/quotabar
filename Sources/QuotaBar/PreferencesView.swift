@@ -257,6 +257,29 @@ struct PreferencesView: View {
                 .labelsHidden()
                 .fixedSize()
             }
+
+            Divider()
+            PreferenceRow(
+                title: "Icon size",
+                note: "Keeps the mark within the menu bar's reserved vertical space.")
+            {
+                Slider(
+                    value: $preferences.menuBarAppearance.markSize,
+                    in: MenuBarMetrics.markSizeRange.doubleRange)
+                    .frame(width: 110)
+            }
+
+            Divider()
+            PreferenceRow(
+                title: "Icon and number spacing",
+                note: "The tightest setting still leaves visible space between the mark and readout.")
+            {
+                let side = MenuBarMetrics.markSide(for: preferences.menuBarAppearance)
+                Slider(
+                    value: $preferences.menuBarAppearance.markGap,
+                    in: MenuBarMetrics.gapRange(for: side).doubleRange)
+                    .frame(width: 110)
+            }
         }
     }
 
@@ -341,6 +364,10 @@ struct PreferencesView: View {
         }
         .font(Typography.font(10))
     }
+}
+
+private extension ClosedRange where Bound == CGFloat {
+    var doubleRange: ClosedRange<Double> { Double(lowerBound)...Double(upperBound) }
 }
 
 /// One provider switch, with the state quota-axi actually reports next to it, so

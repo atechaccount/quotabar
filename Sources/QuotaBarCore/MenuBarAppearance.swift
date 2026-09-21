@@ -145,6 +145,8 @@ public struct MenuBarAppearance: Equatable, Sendable {
     public var textColorStyle: MenuBarTextColorStyle
     public var textColorHex: String
     public var font: MenuBarFontChoice
+    public var markSize: Double
+    public var markGap: Double
 
     public init(
         backingScope: MenuBarBackingScope = .mark,
@@ -154,7 +156,9 @@ public struct MenuBarAppearance: Equatable, Sendable {
         backingOpacity: Double = MenuBarAppearance.defaultCustomBackingOpacity,
         textColorStyle: MenuBarTextColorStyle = .automatic,
         textColorHex: String = MenuBarAppearance.defaultCustomTextHex,
-        font: MenuBarFontChoice = .system)
+        font: MenuBarFontChoice = .system,
+        markSize: Double = MenuBarAppearance.defaultMarkSize,
+        markGap: Double = MenuBarAppearance.defaultMarkGap)
     {
         self.backingScope = backingScope
         self.markStyle = markStyle
@@ -164,6 +168,8 @@ public struct MenuBarAppearance: Equatable, Sendable {
         self.textColorStyle = textColorStyle
         self.textColorHex = textColorHex
         self.font = font
+        self.markSize = markSize
+        self.markGap = markGap
     }
 
     /// The presentation QuotaBar shipped before any of this was configurable.
@@ -175,6 +181,11 @@ public struct MenuBarAppearance: Equatable, Sendable {
     public static let defaultCustomBackingHex = "#808080"
     public static let defaultCustomBackingOpacity = 0.12
     public static let defaultCustomTextHex = "#FFFFFF"
+
+    /// The current 85% menu-bar scale resolves the original 20pt mark to 17pt.
+    /// The gap is deliberately tighter than the former 1.5pt shipped spacing.
+    public static let defaultMarkSize = 17.0
+    public static let defaultMarkGap = 1.0
 
     /// Deliberately faint. The backing keeps a coloured mark legible when a
     /// bright or busy wallpaper shows through a translucent menu bar; anything

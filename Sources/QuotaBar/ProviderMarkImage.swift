@@ -36,6 +36,14 @@ enum ProviderMarkImage {
     /// touch at any percentage width.
     static let menuBarGap = MenuBarMetrics.gap
 
+    static func menuBarSide(for appearance: MenuBarAppearance) -> CGFloat {
+        MenuBarMetrics.markSide(for: appearance)
+    }
+
+    static func menuBarGap(for appearance: MenuBarAppearance, side: CGFloat) -> CGFloat {
+        MenuBarMetrics.markGap(for: appearance, side: side)
+    }
+
     /// How far a mark is inset inside its backing plate, for a plate of `side`.
     /// Proportional, so the plate keeps the same visual margin at every size it
     /// is drawn at - the menu bar's and the dropdown's alike.
@@ -46,6 +54,10 @@ enum ProviderMarkImage {
     /// The inset of the menu bar plate specifically, which is the one the status
     /// item title has to know about to work out its kern.
     static let menuBarBackingInset = MenuBarMetrics.side * MenuBarMetrics.backingInsetFraction
+
+    static func menuBarBackingInset(for side: CGFloat) -> CGFloat {
+        backingInset(side: side)
+    }
 
     /// The corner radius of a plate, as a fraction of its shorter side. Shared
     /// with the plate the status item draws behind mark and number together, so
@@ -104,7 +116,7 @@ enum ProviderMarkImage {
         image(
             provider: provider,
             dark: dark,
-            side: menuBarSide,
+            side: menuBarSide(for: appearance),
             backing: appearance.markBacking(dark: dark),
             markStyle: appearance.markStyle,
             // Always inset: the mark keeps one size whether or not it is plated.
