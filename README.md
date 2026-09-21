@@ -9,9 +9,12 @@ It runs `quota-axi --json --full` and renders that output as the single source o
 
 - macOS 14 or newer.
 - Swift 6 and the macOS SDK from Xcode Command Line Tools.
-- `quota-axi` on `PATH`, or installed at `/Users/durell/Library/pnpm/bin/quota-axi`.
+- `quota-axi` installed with pnpm, Homebrew, or on `PATH`.
+- Node.js installed with nvm, Homebrew, Volta, pnpm, or on `PATH`.
 
-If `quota-axi` cannot be found, QuotaBar shows a clear error and keeps its refresh schedule alive.
+QuotaBar resolves both `quota-axi` and the Node executable its shim needs when launched from the Dock, Spotlight, or at login, where macOS supplies a minimal `PATH`.
+It searches pnpm locations, both Homebrew prefixes, and versioned nvm directories instead of depending on a terminal's login environment.
+If either tool is missing, QuotaBar names it and lists the locations it checked while keeping its refresh schedule alive.
 
 ## Build and install
 
