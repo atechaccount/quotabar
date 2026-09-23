@@ -41,8 +41,10 @@ public struct QuotaAXIRunner: Sendable {
         self.bundledExecutablePath = bundledExecutablePath
     }
 
-    public func run(readOnly: Bool, timeout: TimeInterval = 20) async throws -> QuotaSnapshot {
-        let data = try await runProcess(readOnly: readOnly, timeout: timeout)
+    /// `providers`, when given, adds `--provider a,b,c` so a fallback run can
+    /// be scoped to exactly the providers the caller still needs.
+    public func run(readOnly: Bool, timeout: TimeInterval = 20, providers: [String]? = nil) async throws -> QuotaSnapshot {
+        let data = try await runProcess(readOnly: readOnly, timeout: timeout, providers: providers)
         do {
             return try QuotaParser.decode(data)
         } catch {
@@ -61,7 +63,7 @@ public struct QuotaAXIRunner: Sendable {
         return firstExecutable(named: "quota-axi", in: quotaAXIDirectories(environment: environment))
     }
 
-    private func runProcess(readOnly: Bool, timeout: TimeInterval) async throws -> Data {
+    private func runProcess(readOnly: Bool, timeout: TimeInterval, providers: [String]?) async throws -> Data {
         let quotaDirectories = Self.quotaAXIDirectories(environment: environment)
         guard let executable = Self.resolveExecutable(
             environment: environment,
@@ -90,7 +92,8 @@ public struct QuotaAXIRunner: Sendable {
                         executable: executable,
                         environment: childEnvironment,
                         readOnly: readOnly,
-                        timeout: timeout))
+                        timeout: timeout,
+                        providers: providers))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -102,13 +105,15 @@ public struct QuotaAXIRunner: Sendable {
         executable: String,
         environment: [String: String],
         readOnly: Bool,
-        timeout: TimeInterval) throws -> Data
+        timeout: TimeInterval,
+        providers: [String]? = nil) throws -> Data
     {
         let process = Process()
         let standardOutput = Pipe()
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = ["--json", "--full"] + (readOnly ? ["--no-credential-refresh"] : [])
+            + (providers.map { ["--provider", $0.joined(separator: ",")] } ?? [])
         process.environment = environment
         process.standardOutput = standardOutput
         process.standardError = standardError

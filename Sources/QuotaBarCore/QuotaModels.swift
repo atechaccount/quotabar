@@ -34,7 +34,9 @@ public struct QuotaSnapshot: Decodable, Sendable {
             })
     }
 
-    private init(generatedAt: String?, schemaVersion: Int?, providers: [QuotaProvider]) {
+    /// Direct construction for a normalized-model producer other than the JSON
+    /// decoder, such as the native Swift quota readers in `NativeQuota/`.
+    init(generatedAt: String?, schemaVersion: Int?, providers: [QuotaProvider]) {
         self.generatedAt = generatedAt
         self.schemaVersion = schemaVersion
         self.providers = providers
@@ -182,10 +184,12 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
             quotaSemantics: previous.quotaSemantics, isLastKnownUsage: true)
     }
 
-    private init(
+    /// Direct construction for a normalized-model producer other than the JSON
+    /// decoder, such as the native Swift quota readers in `NativeQuota/`.
+    init(
         provider: String, label: String?, source: String?, plan: String?, account: ProviderAccount?,
         windows: [QuotaWindow]?, credits: ProviderCredits?, attempts: [ProviderAttempt]?,
-        state: ProviderState?, quotaSemantics: QuotaSemantics?, isLastKnownUsage: Bool)
+        state: ProviderState?, quotaSemantics: QuotaSemantics?, isLastKnownUsage: Bool = false)
     {
         self.provider = provider
         self.label = label
@@ -234,6 +238,23 @@ public struct QuotaWindow: Decodable, Identifiable, Sendable {
     public let limitUsd: Double?
     public let resetsAt: String?
     public let windowSeconds: Double?
+
+    /// Direct construction for a normalized-model producer other than the JSON
+    /// decoder, such as the native Swift quota readers in `NativeQuota/`.
+    init(
+        id: String?, label: String?, kind: String?, percentUsed: Double?, percentRemaining: Double?,
+        spentUsd: Double?, limitUsd: Double?, resetsAt: String?, windowSeconds: Double?)
+    {
+        self.id = id
+        self.label = label
+        self.kind = kind
+        self.percentUsed = percentUsed
+        self.percentRemaining = percentRemaining
+        self.spentUsd = spentUsd
+        self.limitUsd = limitUsd
+        self.resetsAt = resetsAt
+        self.windowSeconds = windowSeconds
+    }
 
     public var stableID: String { id ?? label ?? kind ?? "window" }
 
@@ -297,6 +318,13 @@ public struct ProviderAccount: Decodable, Sendable {
     public let organization: String?
     public let identityStatus: String?
 
+    init(accountId: String?, email: String?, organization: String?, identityStatus: String?) {
+        self.accountId = accountId
+        self.email = email
+        self.organization = organization
+        self.identityStatus = identityStatus
+    }
+
     enum CodingKeys: String, CodingKey {
         case accountId
         case email
@@ -318,6 +346,12 @@ public struct ProviderCredits: Decodable, Sendable {
     public let unlimited: Bool?
     public let unit: String?
 
+    init(remaining: Double?, unlimited: Bool?, unit: String?) {
+        self.remaining = remaining
+        self.unlimited = unlimited
+        self.unit = unit
+    }
+
     enum CodingKeys: String, CodingKey {
         case remaining
         case unlimited
@@ -336,6 +370,12 @@ public struct ProviderAttempt: Decodable, Sendable {
     public let source: String?
     public let status: String?
     public let error: String?
+
+    init(source: String?, status: String?, error: String?) {
+        self.source = source
+        self.status = status
+        self.error = error
+    }
 
     enum CodingKeys: String, CodingKey {
         case source
@@ -357,6 +397,14 @@ public struct ProviderState: Decodable, Sendable {
     public let refreshedAt: String?
     public let error: String?
     public let sourcesTried: [String]?
+
+    init(status: String?, stale: Bool?, refreshedAt: String?, error: String?, sourcesTried: [String]?) {
+        self.status = status
+        self.stale = stale
+        self.refreshedAt = refreshedAt
+        self.error = error
+        self.sourcesTried = sourcesTried
+    }
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -384,6 +432,16 @@ public struct QuotaSemantics: Decodable, Sendable {
     /// provider page says so instead of pretending the quota is simply missing.
     public let unresolvedWindowIds: [String]?
 
+    init(
+        status: String?, description: String?, effectiveAvailability: [EffectiveAvailability]?,
+        unresolvedWindowIds: [String]?)
+    {
+        self.status = status
+        self.description = description
+        self.effectiveAvailability = effectiveAvailability
+        self.unresolvedWindowIds = unresolvedWindowIds
+    }
+
     enum CodingKeys: String, CodingKey {
         case status
         case description
@@ -404,6 +462,12 @@ public struct EffectiveAvailability: Decodable, Sendable {
     public let scope: String?
     public let status: String?
     public let effectivePercentRemaining: Double?
+
+    init(scope: String?, status: String?, effectivePercentRemaining: Double?) {
+        self.scope = scope
+        self.status = status
+        self.effectivePercentRemaining = effectivePercentRemaining
+    }
 
     enum CodingKeys: String, CodingKey {
         case scope

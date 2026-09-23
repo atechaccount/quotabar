@@ -6,6 +6,7 @@ Three hooks print evidence from the built bundle without screenshots or any syst
 QUOTABAR_SELFTEST=1 ./dist/QuotaBar.app/Contents/MacOS/QuotaBar   # data, marks, status item, schedule
 QUOTABAR_VERIFY=1   ./dist/QuotaBar.app/Contents/MacOS/QuotaBar   # preferences window
 QUOTABAR_RENDER=.artifacts/render ./dist/QuotaBar.app/Contents/MacOS/QuotaBar  # layout PNGs
+QUOTABAR_COMPARE_QUOTA=1 ./dist/QuotaBar.app/Contents/MacOS/QuotaBar  # native reader vs bundled quota-axi
 ```
 
 `QUOTABAR_SELFTEST` prints every provider row and window it would render from live `quota-axi` output, the visibility seed, every mark's ink coverage and average color in both appearances, and then reads the **real** `NSStatusBarButton`: what image and title it was handed, and how much ink the live button actually draws in the mark region.
@@ -25,4 +26,9 @@ It also writes `menubar-zero-{off,zero,spent,large}-{light,dark}.png` and `menub
 The `RENDER menubar-zero` lines print the displayed value and whether the dot is present, and the live render reports an error if quota-axi is unavailable.
 Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
 
-All three quit the app when they finish.
+`QUOTABAR_COMPARE_QUOTA` runs the native Swift readers and the bundled quota-axi 0.1.51 runtime for Claude, Codex, and Cursor and prints a field-by-field comparison: status, staleness, source, plan, whether an account identity was resolved, every window's remaining percentage and reset time, and whether the Claude extra-usage window is present.
+Both sides run read-only, so it never delegates a credential refresh.
+Run it by hand, a small bounded number of times and never in a loop: each run is two live requests per provider against the real usage endpoints, and running it repeatedly can rate-limit the account exactly like hammering the endpoints any other way would.
+See `docs/native-quota-porting.md` for what a mismatch would mean.
+
+All four quit the app when they finish.

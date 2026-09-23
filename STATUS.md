@@ -10,14 +10,26 @@
 
 ## Next
 
+- Verify Cursor's native reader against a real signed-in Cursor account, then remove the bundled quota-axi runtime and `Scripts/BuildQuotaAXI.sh`. Cursor was not signed in on the machine this port was built on, so only Claude and Codex got a live side-by-side comparison against the bundled runtime; Cursor has fixture tests only.
 - Show several providers in the menu bar at once on a larger screen. Named as out of scope for the appearance work and not built.
 - The Overview reset countdown. Out of scope for the appearance work.
-- Add real Limit Reset Credits once `quota-axi` reports that field. It reports a spending-credit balance, which is a different number, so nothing in the UI promises reset credits today.
+- Add real Limit Reset Credits once a provider reports that field. It reports a spending-credit balance, which is a different number, so nothing in the UI promises reset credits today.
 - Build the separately scoped Notification Center widget when full Xcode is available. This is deferred follow-up work and no widget extension exists in this package.
 - Investigate whether the ad-hoc-signed app sees fewer credential sources than an interactive shell; `auth_required` rows are expected and safe in the meantime.
 - Review vendor mark licensing before distributing QuotaBar beyond personal use. The marks in `Sources/QuotaBar/Resources/ProviderMarks` are the vendors' own.
 
 ## Recent round
+
+Claude, Codex, and Cursor quota is now read natively in Swift instead of by shelling out to quota-axi.
+
+- **A native Swift port of quota-axi 0.1.51's Claude, Codex, and Cursor readers** lives in `Sources/QuotaBarCore/NativeQuota/`, producing the same normalized model the app already consumed, including Claude's extra usage, account identity, plan, source, staleness, and every session/week window. See `docs/native-quota-porting.md` for the file-by-file map back to quota-axi and what a future upgrade needs to re-port.
+- **Token refresh and Keychain access copy quota-axi's rules exactly, not a redesign.** Codex and Cursor never refresh a token at all - the live endpoint alone decides whether a stored credential still works. Claude's only refresh path delegates to `claude doctor` under quota-axi's own live-Claude-Code-process guard, and every Keychain read goes through `/usr/bin/security` as a child process, gated on an access-marker file exactly like quota-axi, never the Security framework directly and never a prompt QuotaBar asked for.
+- **`HybridQuotaSource` is the primary quota source now.** The bundled quota-axi runtime (`Scripts/BuildQuotaAXI.sh`, still built into the app) is kept only as a fallback for the same three providers, used if the native readers ever throw outright; they are not expected to, since each one absorbs its own failures the way quota-axi's own adapters do. Removing the bundled runtime waits on live Cursor verification (see Next).
+- **Verified on this machine** with a live side-by-side comparison (`QUOTABAR_COMPARE_QUOTA=1`, documented in `docs/verifying-a-build.md`) against this machine's real signed-in Claude and Codex accounts, run twice: percentages, plan, and account identity matched exactly between the native reader and the bundled quota-axi 0.1.51 runtime on the first run; the second run's only mismatch was the bundled runtime's own request getting rate-limited by Anthropic (429) after the native reader had already succeeded moments earlier, which is exactly why the comparison hook's docs say to run it a small bounded number of times and never in a loop. Cursor was not signed in on this machine, so it has fixture-based unit tests instead (`NQCursorReaderTests`) and needs live verification separately.
+- `./test.sh` passes 174 tests (49 new ones under `Tests/QuotaBarCoreTests/NativeQuota/`) and `./build.sh` succeeds.
+- The README's "Build and install" section was rewritten as a literal, copy-paste walkthrough from a fresh clone - prerequisites and how to check them, the exact build command, where the app lands, quitting a running QuotaBar, installing, launching, confirming it worked, and common failures - and verified by hand in a clean shell against a scratch install folder rather than `/Applications`.
+
+## Previous round
 
 Claude extra usage now has two presentations: Card by default and Meter as a saved preference.
 

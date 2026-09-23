@@ -11,10 +11,19 @@
 - Every command is terminated after 20 seconds, and a failure or timeout never stops later ticks.
 - Failed attempts leave the last good quota visible and mark it stale beside the continuously updating Last updated age.
 
-The Read-only refresh preference adds `--no-credential-refresh`.
+The Read-only refresh preference disables credential renewal for every provider: it passes `readOnly: true` to the native readers (which then never delegate Claude's `claude doctor` refresh) and adds `--no-credential-refresh` on the rare bundled-runtime fallback.
 Turn it on to avoid credential renewal, with the tradeoff that displayed quota can become stale.
 
-## Finding `quota-axi`
+## Quota source: native Swift first, bundled quota-axi as a fallback
+
+`HybridQuotaSource` (`Sources/QuotaBarCore/NativeQuota/NativeQuotaService.swift`) is what `AppModel` refreshes from.
+For Claude, Codex, and Cursor, it runs the native Swift readers under `Sources/QuotaBarCore/NativeQuota/` directly, in-process, with no subprocess and no Node.js dependency.
+See [`native-quota-porting.md`](native-quota-porting.md) for what each reader ports and why.
+
+The bundled quota-axi executable is kept only as a fallback for those same three providers, used if the native readers ever throw outright; they are not expected to, since every reader absorbs its own failures into a `QuotaProvider` the same way quota-axi's own adapters do.
+`Scripts/BuildQuotaAXI.sh` and the bundled runtime stay in the app until Cursor can be verified against a live signed-in account (see `native-quota-porting.md`); removing them is follow-up work.
+
+## Finding the bundled `quota-axi` fallback
 
 QuotaBar runs the standalone quota-axi executable beside its own app executable first.
 It does not need Node.js at runtime when that bundled copy is present.

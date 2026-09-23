@@ -29,7 +29,7 @@ final class AppModel: ObservableObject {
     private var activity: NSObjectProtocol?
 
     private lazy var coordinator: RefreshCoordinator = {
-        let runner = QuotaAXIRunner()
+        let runner = HybridQuotaSource()
         return RefreshCoordinator(
             runner: { readOnly in
                 try await runner.run(readOnly: readOnly, timeout: 20)

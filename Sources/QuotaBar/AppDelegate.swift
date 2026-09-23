@@ -29,6 +29,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if environment["QUOTABAR_COMPARE_QUOTA"] == "1" {
+            Task { @MainActor in
+                await QuotaCompare.run()
+                NSApp.terminate(nil)
+            }
+            return
+        }
+
         let model = AppModel()
         self.model = model
         let statusItem = StatusItemController(model: model)
