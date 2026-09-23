@@ -20,8 +20,9 @@ Note that this hook runs at launch with no user interaction, and macOS 14 can re
 `QUOTABAR_RENDER` draws the real views into PNGs with `ImageRenderer` so the layout can be looked at without capturing the screen.
 It draws Antigravity twice, as `provider-two-windows` and `provider-single-window`, because the short page is where the floor and the footer show and the two are meant to be held side by side.
 It also writes `menubar-backing.png`, the real menu bar item at four backing strengths over a light menu bar, a dark one, and a bright and a busy wallpaper, for choosing that value by eye, and `menubar-column.png`, the same item at 4%, 44% and 100% with a rule down the percent sign.
-It writes `extra-usage-*-menubar.png` and `extra-usage-*-dropdown.png` for $4.20 spent against a $20 cap, $0 spent against a $50 cap, a spend with no cap, extra usage off, and the current Claude snapshot from `QuotaAXIRunner` in read-only mode.
-The `RENDER extra-usage` lines print the menu bar and dropdown text for each case, and the live render reports an error if quota-axi is unavailable.
+It writes `extra-usage-{card,meter}-{capped,zero,no-cap,off,live}-{light,dark}.png` for both Claude extra usage choices in each appearance, including the current Claude snapshot from `QuotaAXIRunner` in read-only mode.
+It also writes `menubar-zero-{off,zero,spent,large}-{light,dark}.png` and `menubar-zero-above-zero-{light,dark}.png` to show the plain 0%, availability dot, $4.69, $99.00, and percentage-only above-zero states.
+The `RENDER menubar-zero` lines print the displayed value and whether the dot is present, and the live render reports an error if quota-axi is unavailable.
 Two limitations to know: `ImageRenderer` draws a `ScrollView` as an empty box, so these renders use the non-scrolling variant of the same views, and it draws AppKit-backed controls such as `Picker` and `Toggle` as a yellow placeholder rather than the control.
 
 All three quit the app when they finish.

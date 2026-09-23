@@ -2,6 +2,14 @@ import AppKit
 import Foundation
 import QuotaBarCore
 
+enum ExtraUsageDisplay: String, CaseIterable, Identifiable {
+    case card
+    case meter
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
 @MainActor
 final class AppPreferences: ObservableObject {
     static let refreshIntervals: [(label: String, seconds: TimeInterval)] = [
@@ -30,6 +38,7 @@ final class AppPreferences: ObservableObject {
         static let textColorHex = "menuBarTextColorHex"
         static let readoutFont = "menuBarReadoutFont"
         static let markSize = "menuBarMarkSize"
+        static let extraUsageDisplay = "extraUsageDisplay"
     }
 
     private let defaults: PreferenceStore
@@ -51,6 +60,10 @@ final class AppPreferences: ObservableObject {
 
     @Published var readOnlyRefresh: Bool {
         didSet { defaults.set(readOnlyRefresh, forKey: Key.readOnly) }
+    }
+
+    @Published var extraUsageDisplay: ExtraUsageDisplay {
+        didSet { defaults.set(extraUsageDisplay.rawValue, forKey: Key.extraUsageDisplay) }
     }
 
     /// How the menu bar item is drawn. Written field by field rather than as one
@@ -84,6 +97,8 @@ final class AppPreferences: ObservableObject {
             rawValue: defaults.string(forKey: Key.focusMode) ?? "") ?? .focusedProvider
         focusedProvider = defaults.string(forKey: Key.focusedProvider) ?? ""
         readOnlyRefresh = defaults.object(forKey: Key.readOnly) as? Bool ?? false
+        extraUsageDisplay = ExtraUsageDisplay(
+            rawValue: defaults.string(forKey: Key.extraUsageDisplay) ?? "") ?? .card
         hiddenProviders = Set(defaults.stringArray(forKey: Key.hiddenProviders) ?? [])
         didSeedFocus = defaults.bool(forKey: Key.didSeedFocus)
         didSeedVisibility = defaults.bool(forKey: Key.didSeedVisibility)

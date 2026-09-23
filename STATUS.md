@@ -19,6 +19,15 @@
 
 ## Recent round
 
+Claude extra usage now has two presentations: Card by default and Meter as a saved preference.
+
+- The Claude page shows capped spending, zero spend, and Business spending without a reported limit; it shows nothing when extra usage is off.
+- The menu bar shows only the session percentage above 0%; at 0% it shows plain `0%` when off, an availability dot with zero spend, or the exact spent dollars when positive.
+- The render hook covers both choices in four states and both appearances, plus the live snapshot and the 0% menu bar cases.
+- `./test.sh` passes 125 tests, `./build.sh` succeeds, and the self-test and preferences verification hooks pass without system permission prompts.
+
+## Previous round
+
 The menu bar icon sits closer to the percentage, and the spacing slider is gone.
 
 - **The spacing setting never worked.** It was applied as `.kern` on the mark's text attachment, and TextKit ignores kerning on an attachment glyph: measured across the whole range the setting could reach, every value laid the item out to exactly the same width, to three decimal places. The captain was right that moving the slider did nothing, and right that the app could go tighter; the reason was the mechanism, not the app.
@@ -27,7 +36,7 @@ The menu bar icon sits closer to the percentage, and the spacing slider is gone.
 - **The setting is gone, not hidden.** The stored `menuBarMarkGap` key, the slider and the `MenuBarAppearance` field are all removed, and an install that moved that slider has the dead key cleared on first launch - the same tidy-up the retired greyscale mark style does. Verified against the real preferences on this machine: the key was there before the run and absent after. The icon size setting is untouched.
 - `MenuBarMetrics.markTrailingMargin` is a hard floor with no control in front of it, and `LayoutStabilityTests` plus the self-test's `menubargap` sweep - now `margin=` and `floorHeld=` - hold it there.
 
-## Previous round
+## Earlier round
 
 The overview rows now carry the reset countdown.
 

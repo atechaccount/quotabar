@@ -128,7 +128,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     static func statusTitle(
         mark: NSImage,
         percent: String,
-        extraUsage: String? = nil,
+        money: String? = nil,
         appearance: MenuBarAppearance = .default) -> NSAttributedString
     {
         let titleFont = font(for: appearance.font)
@@ -155,13 +155,25 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             height: mark.size.height)
 
         let title = NSMutableAttributedString(attachment: attachment)
-        guard !percent.isEmpty else { return title }
+        guard !percent.isEmpty || money != nil else { return title }
 
         let numberStart = title.length
-        title.append(NSAttributedString(string: percent, attributes: [
+        // Keep positive spend right-aligned through $99.99 in every chosen face.
+        // Amounts above that width grow naturally instead of being clipped.
+        let targetWidth = ("$99.99" as NSString).size(withAttributes: [.font: titleFont]).width
+        let moneyWidth = money.map { ($0 as NSString).size(withAttributes: [.font: titleFont]).width }
+        let moneyPad = moneyWidth.map { $0 < targetWidth ? " " : "" } ?? ""
+        let number = money.map { moneyPad + $0 } ?? percent
+        title.append(NSAttributedString(string: number, attributes: [
             .font: titleFont,
             .foregroundColor: appearance.textColor().map { NSColor($0) } ?? NSColor.labelColor,
         ]))
+        if !moneyPad.isEmpty, let moneyWidth {
+            let padWidth = (moneyPad as NSString).size(withAttributes: [.font: titleFont]).width
+            title.addAttribute(.kern, value: targetWidth - moneyWidth - padWidth,
+                               range: NSRange(location: numberStart, length: 1))
+        }
+        guard money == nil else { return title }
         if percent == reservedUnknown() {
             let knownWidth = ("100%" as NSString).size(withAttributes: [.font: titleFont]).width
             let unknownWidth = (percent as NSString).size(withAttributes: [.font: titleFont]).width
@@ -173,12 +185,6 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 range: NSRange(location: numberStart, length: percent.count))
         }
         correctReservedPadding(in: title, from: numberStart, font: titleFont)
-        if let extraUsage {
-            title.append(NSAttributedString(string: "  \(extraUsage)", attributes: [
-                .font: titleFont,
-                .foregroundColor: appearance.textColor().map { NSColor($0) } ?? NSColor.labelColor,
-            ]))
-        }
         return title
     }
 
@@ -296,7 +302,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let appearance = model.preferences.menuBarAppearance
         let dark = Self.isDark(button.effectiveAppearance)
         let image = ProviderMarkImage.menuBarImage(
-            provider: readout.provider, dark: dark, appearance: appearance)
+            provider: readout.provider, dark: dark, appearance: appearance,
+            availabilityDot: readout.showsExtraUsageDot)
 
         let title = readout.percentRemaining.map { Self.reservedPercent($0) }
             ?? (readout.provider == nil ? "" : Self.reservedUnknown())
@@ -305,7 +312,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.imagePosition = .noImage
         button.font = Self.font(for: appearance.font)
         button.attributedTitle = Self.statusTitle(
-            mark: image, percent: title, extraUsage: readout.extraUsageSpent,
+            mark: image, percent: title, money: readout.extraUsageDollarReadout,
             appearance: appearance)
         button.layoutSubtreeIfNeeded()
         applyWholeItemPlate(to: button, appearance: appearance, dark: dark)
@@ -314,7 +321,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
         rendered = RenderedStatusItem(
             provider: readout.provider,
-            title: title + (readout.extraUsageSpent.map { "  \($0)" } ?? ""),
+            title: button.attributedTitle.string.replacingOccurrences(of: "\u{FFFC}", with: ""),
             hasImage: Self.markImage(in: button.attributedTitle) != nil,
             imageIsTemplate: Self.markImage(in: button.attributedTitle)?.isTemplate ?? false,
             imageSize: Self.markImage(in: button.attributedTitle)?.size ?? .zero,

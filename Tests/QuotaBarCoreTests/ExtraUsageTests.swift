@@ -55,4 +55,33 @@ struct ExtraUsageTests {
         #expect(hidden.extraUsageSpent == nil)
         #expect(hidden.accessibilityDescription == "QuotaBar, Claude session 83% remaining")
     }
+
+    @Test
+    func zeroSessionChoosesPlainPercentDotOrExactSpend() throws {
+        func readout(_ percent: Double, _ extra: String = "") throws -> MenuBarReadout {
+            let snapshot = try QuotaParser.decode("""
+            {"providers":[{"provider":"claude","state":{"status":"fresh"},"windows":[
+            {"kind":"session","percentRemaining":\(percent)}\(extra)]}]}
+            """)
+            return MenuBarReadoutResolver.resolve(
+                snapshot: snapshot, mode: .focusedProvider,
+                focusedProvider: "claude", isVisible: { _ in true })
+        }
+
+        let off = try readout(0)
+        let zero = try readout(0, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":0}")
+        let spent = try readout(0, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":4.69}")
+        let large = try readout(0, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":99}")
+        let aboveZero = try readout(85, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":4.69}")
+        let visibleZero = try readout(0.49, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":4.69}")
+        let visibleOne = try readout(0.5, ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":4.69}")
+
+        #expect(off.extraUsageDollarReadout == nil && !off.showsExtraUsageDot)
+        #expect(zero.extraUsageDollarReadout == nil && zero.showsExtraUsageDot)
+        #expect(spent.extraUsageDollarReadout == "$4.69" && !spent.showsExtraUsageDot)
+        #expect(large.extraUsageDollarReadout == "$99.00" && !large.showsExtraUsageDot)
+        #expect(aboveZero.extraUsageDollarReadout == nil && !aboveZero.showsExtraUsageDot)
+        #expect(visibleZero.extraUsageDollarReadout == "$4.69")
+        #expect(visibleOne.extraUsageDollarReadout == nil)
+    }
 }

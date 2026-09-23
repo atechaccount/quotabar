@@ -39,13 +39,15 @@ enum RenderCheck {
 
     private static var sample: String { sample(agyWindows: agyWindowsBoth) }
 
-    private static func sample(agyWindows: String, extraUsage: String = "") -> String { """
+    private static func sample(
+        agyWindows: String, extraUsage: String = "", claudeSessionPercent: Double = 100,
+        claudePlan: String = "pro") -> String { """
     {"generatedAt":"2026-09-20T15:24:02.920Z","providers":[
-      {"provider":"claude","label":"Claude","source":"oauth","plan":"pro",
+      {"provider":"claude","label":"Claude","source":"oauth","plan":"\(claudePlan)",
        "account":{"email":"service.5k7fv@simplelogin.com"},
        "state":{"status":"fresh"},
        "windows":[
-         {"id":"five_hour","label":"session","kind":"session","percentRemaining":100,
+         {"id":"five_hour","label":"session","kind":"session","percentRemaining":\(claudeSessionPercent),
           "windowSeconds":18000,"resetsAt":"\(iso(4.9))"},
          {"id":"seven_day","label":"week","kind":"weekly","percentRemaining":46,
           "windowSeconds":604800,"resetsAt":"\(iso(83))"}\(extraUsage)]},
@@ -129,18 +131,38 @@ enum RenderCheck {
         write(menuBarMarkStyleSheet(), to: root.appendingPathComponent("menubar-mark-style.png"))
         write(menuBarPlateSheet(), to: root.appendingPathComponent("menubar-plate.png"))
 
-        for (name, spent, cap) in [("420", 4.20, 20.0), ("000", 0.0, 50.0),
-                                    ("no-cap", 4.20, nil)] as [(String, Double, Double?)] {
+        for (name, spent, cap) in [("capped", 4.69, 17.0), ("zero", 0.0, 17.0),
+                                    ("no-cap", 4.69, nil)] as [(String, Double, Double?)] {
             let extra = ",{" + "\"id\":\"extra_usage\",\"label\":\"extra usage\","
                 + "\"kind\":\"credits\",\"spentUsd\":\(spent)"
                 + (cap.map { ",\"limitUsd\":\($0)" } ?? "") + "}"
             if let fixture = try? QuotaParser.decode(sample(
-                agyWindows: agyWindowsBoth, extraUsage: extra)) {
+                agyWindows: agyWindowsBoth, extraUsage: extra,
+                claudePlan: name == "no-cap" ? "business" : "pro")) {
                 renderExtraUsage(name: name, snapshot: fixture, into: root)
             }
         }
         if let off = try? QuotaParser.decode(sample) {
             renderExtraUsage(name: "off", snapshot: off, into: root)
+        }
+        for (name, spent, cap) in [("zero", 0.0, 17.0), ("spent", 4.69, 17.0),
+                                    ("large", 99.0, 100.0)] {
+            let extra = ",{\"id\":\"extra_usage\",\"kind\":\"credits\","
+                + "\"spentUsd\":\(spent),\"limitUsd\":\(cap)}"
+            if let fixture = try? QuotaParser.decode(sample(
+                agyWindows: agyWindowsBoth, extraUsage: extra, claudeSessionPercent: 0)) {
+                renderMenuBar(name: name, snapshot: fixture, into: root)
+            }
+        }
+        if let off = try? QuotaParser.decode(sample(
+            agyWindows: agyWindowsBoth, claudeSessionPercent: 0)) {
+            renderMenuBar(name: "off", snapshot: off, into: root)
+        }
+        if let aboveZero = try? QuotaParser.decode(sample(
+            agyWindows: agyWindowsBoth,
+            extraUsage: ",{\"id\":\"extra_usage\",\"kind\":\"credits\",\"spentUsd\":4.69}",
+            claudeSessionPercent: 85)) {
+            renderMenuBar(name: "above-zero", snapshot: aboveZero, into: root)
         }
         do {
             let live = try await QuotaAXIRunner().run(readOnly: true)
@@ -151,33 +173,41 @@ enum RenderCheck {
     }
 
     private static func renderExtraUsage(name: String, snapshot: QuotaSnapshot, into root: URL) {
-        let subject = model(snapshot: snapshot, focus: "claude", show: [])
-        let readout = subject.menuBarReadout
-        guard let provider = snapshot.providers.first(where: { $0.provider == "claude" }) else { return }
-        let line = QuotaFormatting.extraUsageLine(
-            spentUsd: provider.extraUsageWindow?.spentUsd,
-            limitUsd: provider.extraUsageWindow?.limitUsd)
-        let percent = readout.percentRemaining.map { StatusItemController.reservedPercent($0) }
-            ?? StatusItemController.reservedUnknown()
-        let mark = ProviderMarkImage.menuBarImage(
-            provider: "claude", dark: false, appearance: .default)
-        let title = NSMutableAttributedString(attributedString: StatusItemController.statusTitle(
-            mark: mark, percent: percent, extraUsage: readout.extraUsageSpent))
-        title.addAttribute(.foregroundColor, value: NSColor.black,
-                           range: NSRange(location: 0, length: title.length))
-        let label = title.string.replacingOccurrences(of: "\u{FFFC}", with: "")
-            .replacingOccurrences(of: "\u{2007}", with: " ").trimmingCharacters(in: .whitespaces)
-        print("RENDER extra-usage \(name) menu=\"\(label)\" dropdown=\"\(line ?? "-")\"")
-        write(page("claude", snapshot: snapshot, focus: "claude", dark: false),
-              to: root.appendingPathComponent("extra-usage-\(name)-dropdown.png"))
-        let width = max(200, title.size().width + 24)
-        let item = NSImage(size: NSSize(width: width, height: 28), flipped: true) { _ in
-            menuBarFill(false).setFill()
-            NSRect(x: 0, y: 0, width: width, height: 28).fill()
-            title.draw(at: NSPoint(x: 12, y: (28 - title.size().height) / 2))
-            return true
+        for display in ExtraUsageDisplay.allCases {
+            for dark in [false, true] {
+                let appearance = dark ? "dark" : "light"
+                let filename = "extra-usage-\(display.rawValue)-\(name)-\(appearance).png"
+                write(page("claude", snapshot: snapshot, focus: "claude", dark: dark,
+                           extraUsageDisplay: display), to: root.appendingPathComponent(filename))
+            }
         }
-        write(item, to: root.appendingPathComponent("extra-usage-\(name)-menubar.png"))
+    }
+
+    private static func renderMenuBar(name: String, snapshot: QuotaSnapshot, into root: URL) {
+        let readout = model(snapshot: snapshot, focus: "claude", show: []).menuBarReadout
+        for dark in [false, true] {
+            let appearance = dark ? "dark" : "light"
+            let mark = ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: dark, availabilityDot: readout.showsExtraUsageDot)
+            let percent = readout.percentRemaining.map { StatusItemController.reservedPercent($0) }
+                ?? StatusItemController.reservedUnknown()
+            let title = NSMutableAttributedString(attributedString: StatusItemController.statusTitle(
+                mark: mark, percent: percent, money: readout.extraUsageDollarReadout))
+            title.addAttribute(.foregroundColor, value: dark ? NSColor.white : NSColor.black,
+                               range: NSRange(location: 0, length: title.length))
+            let label = title.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+                .replacingOccurrences(of: "\u{2007}", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+            print("RENDER menubar-zero \(name) \(appearance) value=\"\(label)\" dot=\(readout.showsExtraUsageDot)")
+            let width = max(140, title.size().width + 24)
+            let item = NSImage(size: NSSize(width: width, height: 28), flipped: true) { _ in
+                menuBarFill(dark).setFill()
+                NSRect(x: 0, y: 0, width: width, height: 28).fill()
+                title.draw(at: NSPoint(x: 12, y: (28 - title.size().height) / 2))
+                return true
+            }
+            write(item, to: root.appendingPathComponent("menubar-zero-\(name)-\(appearance).png"))
+        }
     }
 
     /// How wide AppKit's own padding makes a variable-length status item beyond
@@ -564,9 +594,11 @@ enum RenderCheck {
         focus: String,
         dark: Bool,
         show extra: [String] = [],
+        extraUsageDisplay: ExtraUsageDisplay = .card,
         tint: Double = Layout.tabStripTintOpacity) -> NSImage?
     {
         let subject = model(snapshot: snapshot, focus: focus, show: extra)
+        subject.preferences.extraUsageDisplay = extraUsageDisplay
         subject.select(page == "overview" ? .overview : .provider(page))
         return render(
             QuotaMenuView(model: subject, scrolls: false, tabStripTintOpacity: tint),

@@ -20,6 +20,43 @@ struct MenuBarAppearanceRenderingTests {
     func anUntouchedInstallReadsBackTheOriginalPresentation() {
         let preferences = AppPreferences(defaults: InMemoryPreferenceStore())
         #expect(preferences.menuBarAppearance == MenuBarAppearance.default)
+        #expect(preferences.extraUsageDisplay == .card)
+    }
+
+    @Test
+    func extraUsageDisplaySurvivesRelaunch() {
+        let store = InMemoryPreferenceStore()
+        let preferences = AppPreferences(defaults: store)
+        preferences.extraUsageDisplay = .meter
+        #expect(reopened(store).extraUsageDisplay == .meter)
+    }
+
+    @Test
+    func moneyReadoutReservesWidthThroughNinetyNineDollars() {
+        for face in MenuBarFontChoice.allCases {
+            var appearance = MenuBarAppearance.default
+            appearance.font = face
+            let mark = ProviderMarkImage.menuBarImage(provider: "claude", dark: false)
+            let widths = ["$4.69", "$9.99", "$10.00", "$99.00", "$99.99"].map {
+                StatusItemController.statusTitle(
+                    mark: mark, percent: StatusItemController.reservedPercent(0),
+                    money: $0, appearance: appearance).size().width
+            }
+            #expect((widths.max() ?? 0) - (widths.min() ?? 0) < 0.5,
+                    "money readout shifts in \(face): \(widths)")
+        }
+    }
+
+    @Test
+    func availabilityDotChangesTheMarkWithoutChangingItsFootprint() {
+        for dark in [false, true] {
+            let plain = ProviderMarkImage.menuBarImage(provider: "claude", dark: dark)
+            let dotted = ProviderMarkImage.menuBarImage(
+                provider: "claude", dark: dark, availabilityDot: true)
+            #expect(dotted.size == plain.size)
+            #expect(dotted.tiffRepresentation != plain.tiffRepresentation)
+            #expect(!dotted.isTemplate)
+        }
     }
 
     @Test

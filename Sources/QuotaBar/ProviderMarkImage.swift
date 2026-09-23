@@ -23,6 +23,7 @@ enum ProviderMarkImage {
         let markStyle: String
         let insetMark: Bool
         let trailingTrim: CGFloat
+        let availabilityDot: Bool
     }
 
     private static var cache: [CacheKey: NSImage] = [:]
@@ -76,7 +77,8 @@ enum ProviderMarkImage {
         backing: (color: BrandRGB, opacity: Double)? = nil,
         markStyle: MenuBarMarkStyle = .color,
         insetMark: Bool = false,
-        trailingTrim: CGFloat = 0) -> NSImage
+        trailingTrim: CGFloat = 0,
+        availabilityDot: Bool = false) -> NSImage
     {
         let key = CacheKey(
             provider: provider ?? "",
@@ -86,7 +88,8 @@ enum ProviderMarkImage {
             backingColor: backing.map { BrandColors.hex(from: $0.color) } ?? "",
             markStyle: markStyle.rawValue,
             insetMark: insetMark,
-            trailingTrim: trailingTrim)
+            trailingTrim: trailingTrim,
+            availabilityDot: availabilityDot)
         if let cached = cache[key] { return cached }
 
         let made = render(
@@ -96,7 +99,8 @@ enum ProviderMarkImage {
             backing: backing,
             markStyle: markStyle,
             insetMark: insetMark,
-            trailingTrim: trailingTrim)
+            trailingTrim: trailingTrim,
+            availabilityDot: availabilityDot)
         cache[key] = made
         return made
     }
@@ -112,7 +116,8 @@ enum ProviderMarkImage {
     static func menuBarImage(
         provider: String?,
         dark: Bool,
-        appearance: MenuBarAppearance = .default) -> NSImage
+        appearance: MenuBarAppearance = .default,
+        availabilityDot: Bool = false) -> NSImage
     {
         let side = menuBarSide(for: appearance)
         return image(
@@ -124,7 +129,8 @@ enum ProviderMarkImage {
             // Always inset: the mark keeps one size whether or not it is plated.
             insetMark: true,
             // The image is the attachment's advance, so the crop is the gap.
-            trailingTrim: MenuBarMetrics.markTrailingTrim(for: side))
+            trailingTrim: MenuBarMetrics.markTrailingTrim(for: side),
+            availabilityDot: availabilityDot && provider == "claude")
     }
 
     /// Whether a real vendor mark exists and loaded. The self-test asserts this
@@ -196,7 +202,8 @@ enum ProviderMarkImage {
         backing: (color: BrandRGB, opacity: Double)?,
         markStyle: MenuBarMarkStyle,
         insetMark: Bool,
-        trailingTrim: CGFloat) -> NSImage
+        trailingTrim: CGFloat,
+        availabilityDot: Bool) -> NSImage
     {
         let size = NSSize(width: side - trailingTrim, height: side)
         let inset = insetMark || backing != nil
@@ -232,6 +239,17 @@ enum ProviderMarkImage {
             // and replaces only the color inside it.
             markRect.fill(using: .sourceAtop)
             NSGraphicsContext.current?.cgContext.endTransparencyLayer()
+            if availabilityDot {
+                let diameter = max(4.5, side * 0.27)
+                let dot = NSRect(
+                    x: markRect.maxX - diameter * 0.58,
+                    y: markRect.minY - diameter * 0.14,
+                    width: diameter, height: diameter)
+                (dark ? NSColor.black : NSColor.white).setFill()
+                NSBezierPath(ovalIn: dot.insetBy(dx: -1, dy: -1)).fill()
+                NSColor(BrandColors.rgb(fromHex: BrandColors.hex(for: "claude"))).setFill()
+                NSBezierPath(ovalIn: dot).fill()
+            }
             return true
         }
         composed.isTemplate = false

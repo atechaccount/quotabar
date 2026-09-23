@@ -121,6 +121,22 @@ struct PreferencesView: View {
                 SectionTitle("Menu bar appearance")
                 appearanceCard
 
+                SectionTitle("Claude extra usage")
+                Card {
+                    PreferenceRow(
+                        title: "Extra usage display",
+                        note: "Choose how Claude spending appears below Session and Week.")
+                    {
+                        Picker("", selection: $preferences.extraUsageDisplay) {
+                            ForEach(ExtraUsageDisplay.allCases) { display in
+                                Text(display.title).tag(display)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                }
+
                 SectionTitle("Providers shown in the top switcher and Overview")
                 providerCard
                 Text("On first launch QuotaBar shows a provider only when quota-axi reports "

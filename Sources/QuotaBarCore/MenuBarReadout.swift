@@ -26,6 +26,7 @@ public struct MenuBarReadout: Sendable, Equatable {
     public let percentRemaining: Double?
     public let windowLabel: String?
     public let extraUsageSpent: String?
+    public let isSessionHeadline: Bool
     public let usageState: QuotaUsageState
 
     public init(
@@ -34,6 +35,7 @@ public struct MenuBarReadout: Sendable, Equatable {
         percentRemaining: Double?,
         windowLabel: String?,
         extraUsageSpent: String? = nil,
+        isSessionHeadline: Bool = false,
         usageState: QuotaUsageState = .unknown)
     {
         self.provider = provider
@@ -41,11 +43,32 @@ public struct MenuBarReadout: Sendable, Equatable {
         self.percentRemaining = percentRemaining
         self.windowLabel = windowLabel
         self.extraUsageSpent = extraUsageSpent
+        self.isSessionHeadline = isSessionHeadline
         self.usageState = usageState
     }
 
     public static let empty = MenuBarReadout(
         provider: nil, providerLabel: nil, percentRemaining: nil, windowLabel: nil)
+
+    private var claudeSessionAtVisibleZero: Bool {
+        guard provider == "claude", isSessionHeadline,
+              let percentRemaining, percentRemaining.isFinite
+        else { return false }
+        return abs(percentRemaining) < 0.5
+    }
+
+    /// The session's visible zero is the only point at which spend replaces the
+    /// percentage. A zero-spend window instead adds a dot to the existing mark.
+    public var extraUsageDollarReadout: String? {
+        guard claudeSessionAtVisibleZero,
+              let extraUsageSpent, extraUsageSpent != "$0.00"
+        else { return nil }
+        return extraUsageSpent
+    }
+
+    public var showsExtraUsageDot: Bool {
+        claudeSessionAtVisibleZero && extraUsageSpent == "$0.00"
+    }
 
     public var accessibilityDescription: String {
         guard let percentRemaining else {
@@ -106,6 +129,7 @@ public enum MenuBarReadoutResolver {
             percentRemaining: headline.percentRemaining,
             windowLabel: headline.windowLabel,
             extraUsageSpent: QuotaFormatting.extraUsageSpent(chosen.extraUsageWindow?.spentUsd),
+            isSessionHeadline: headline.isSession,
             usageState: chosen.usageState)
     }
 

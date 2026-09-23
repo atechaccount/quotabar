@@ -151,10 +151,14 @@ enum SelfTest {
         }
 
         let readout = model.menuBarReadout
-        let expectedTitle = (readout.percentRemaining
-            .map { StatusItemController.reservedPercent($0) }
-            ?? (readout.provider == nil ? "" : StatusItemController.reservedUnknown()))
-            + (readout.extraUsageSpent.map { "  \($0)" } ?? "")
+        let expectedTitle: String
+        if let money = readout.extraUsageDollarReadout {
+            expectedTitle = (money.count < "$99.99".count ? " " : "") + money
+        } else {
+            expectedTitle = readout.percentRemaining
+                .map { StatusItemController.reservedPercent($0) }
+                ?? (readout.provider == nil ? "" : StatusItemController.reservedUnknown())
+        }
         let drawnTitle = button.attributedTitle.string
             .replacingOccurrences(of: "\u{FFFC}", with: "")
         print("SELFTEST statusitem buttonTitle=\"\(drawnTitle)\" "

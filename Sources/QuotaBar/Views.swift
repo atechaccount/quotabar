@@ -142,7 +142,9 @@ struct QuotaMenuView: View {
         case let .provider(key):
             if let provider = model.provider(key) {
                 if provider.availability.isMeasurable {
-                    SignedInProviderPage(provider: provider, model: model, now: now)
+                    SignedInProviderPage(
+                        provider: provider, model: model,
+                        preferences: model.preferences, now: now)
                 } else {
                     UnavailableProviderPage(provider: provider, model: model)
                 }
@@ -549,6 +551,7 @@ struct Meter: View {
 struct SignedInProviderPage: View {
     let provider: QuotaProvider
     @ObservedObject var model: AppModel
+    @ObservedObject var preferences: AppPreferences
     let now: Date
     @Environment(\.colorScheme) private var colorScheme
 
@@ -563,20 +566,17 @@ struct SignedInProviderPage: View {
                 WindowSection(window: window, accent: accent, now: now)
             }
 
-            if let extra = QuotaFormatting.extraUsageLine(
-                spentUsd: provider.extraUsageWindow?.spentUsd,
-                limitUsd: provider.extraUsageWindow?.limitUsd)
+            if provider.provider == "claude",
+               let window = provider.extraUsageWindow,
+               let spentUsd = window.spentUsd,
+               let spent = QuotaFormatting.extraUsageSpent(spentUsd)
             {
-                HStack(spacing: 8) {
-                    Text("Extra usage")
-                        .font(Typography.font(11))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Text(extra)
-                        .font(Typography.font(11, weight: .medium))
-                        .monospacedDigit()
-                }
-                .padding(.top, 14)
+                ExtraUsageSection(
+                    spent: spent,
+                    spentUsd: spentUsd,
+                    limitUsd: window.limitUsd,
+                    display: preferences.extraUsageDisplay,
+                    accent: accent)
             }
 
             if let credits = creditsLine {
@@ -664,6 +664,80 @@ struct SignedInProviderPage: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 14)
+    }
+}
+
+/// Claude's optional spending window. A missing limit means the account has no
+/// reported cap, so both presentations leave out limit language and the meter.
+struct ExtraUsageSection: View {
+    let spent: String
+    let spentUsd: Double
+    let limitUsd: Double?
+    let display: ExtraUsageDisplay
+    let accent: Color
+
+    private var cap: Double? {
+        guard let limitUsd, limitUsd.isFinite, limitUsd >= 0 else { return nil }
+        return limitUsd
+    }
+
+    var body: some View {
+        Group {
+            switch display {
+            case .meter: meterSection
+            case .card: cardSection
+            }
+        }
+        .padding(.top, 17)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var meterSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Extra usage")
+                    .font(Typography.font(16))
+                Spacer(minLength: 8)
+                Text("\(spent) spent")
+                    .font(Typography.font(16, weight: .semibold))
+                    .frame(width: Layout.windowValueColumn, alignment: .trailing)
+            }
+            if let cap {
+                Text("\(QuotaFormatting.extraUsageSpent(max(cap - spentUsd, 0)) ?? "$0.00") left of \(QuotaFormatting.extraUsageSpent(cap) ?? "$0.00") monthly limit")
+                    .font(Typography.font(11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Meter(value: cap > 0 ? spentUsd / cap * 100 : (spentUsd > 0 ? 100 : 0),
+                      tint: accent, height: 9)
+            }
+        }
+    }
+
+    private var cardSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Extra usage")
+                    .font(Typography.font(11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(spent)
+                    .font(Typography.font(16, weight: .semibold))
+                    .frame(width: Layout.windowValueColumn, alignment: .trailing)
+            }
+            HStack(spacing: 8) {
+                Text("Spent this month")
+                Spacer(minLength: 8)
+                if let cap {
+                    Text("\(QuotaFormatting.extraUsageSpent(cap) ?? "$0.00") monthly limit")
+                        .frame(width: Layout.windowValueColumn, alignment: .trailing)
+                }
+            }
+            .font(Typography.font(11))
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(accent.opacity(0.09)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(accent.opacity(0.15), lineWidth: 1))
     }
 }
 
