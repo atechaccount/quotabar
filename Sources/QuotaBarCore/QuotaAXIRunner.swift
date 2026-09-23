@@ -30,9 +30,15 @@ public enum QuotaAXIError: Error, Equatable, LocalizedError, Sendable {
 
 public struct QuotaAXIRunner: Sendable {
     private let environment: [String: String]
+    private let bundledExecutablePath: String?
 
-    public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundledExecutablePath: String? = Bundle.main.executableURL?
+            .deletingLastPathComponent().appendingPathComponent("quota-axi").path
+    ) {
         self.environment = environment
+        self.bundledExecutablePath = bundledExecutablePath
     }
 
     public func run(readOnly: Bool, timeout: TimeInterval = 20) async throws -> QuotaSnapshot {
@@ -44,28 +50,38 @@ public struct QuotaAXIRunner: Sendable {
         }
     }
 
-    public static func resolveExecutable(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        firstExecutable(named: "quota-axi", in: quotaAXIDirectories(environment: environment))
+    public static func resolveExecutable(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundledExecutablePath: String? = Bundle.main.executableURL?
+            .deletingLastPathComponent().appendingPathComponent("quota-axi").path
+    ) -> String? {
+        if let bundledExecutablePath, FileManager.default.isExecutableFile(atPath: bundledExecutablePath) {
+            return bundledExecutablePath
+        }
+        return firstExecutable(named: "quota-axi", in: quotaAXIDirectories(environment: environment))
     }
 
     private func runProcess(readOnly: Bool, timeout: TimeInterval) async throws -> Data {
         let quotaDirectories = Self.quotaAXIDirectories(environment: environment)
-        guard let executable = Self.firstExecutable(named: "quota-axi", in: quotaDirectories) else {
+        guard let executable = Self.resolveExecutable(
+            environment: environment,
+            bundledExecutablePath: bundledExecutablePath) else {
             throw QuotaAXIError.executableNotFound(locations: quotaDirectories)
         }
 
-        let nodeDirectories = Self.nodeDirectories(environment: environment)
-        guard let node = Self.firstExecutable(named: "node", in: nodeDirectories) else {
-            throw QuotaAXIError.nodeNotFound(locations: nodeDirectories)
-        }
-
         var childEnvironment = environment
-        childEnvironment["PATH"] = Self.path(
-            including: [
-                URL(fileURLWithPath: node).deletingLastPathComponent().path,
-                URL(fileURLWithPath: executable).deletingLastPathComponent().path,
-            ],
-            then: environment["PATH"])
+        if executable != bundledExecutablePath {
+            let nodeDirectories = Self.nodeDirectories(environment: environment)
+            guard let node = Self.firstExecutable(named: "node", in: nodeDirectories) else {
+                throw QuotaAXIError.nodeNotFound(locations: nodeDirectories)
+            }
+            childEnvironment["PATH"] = Self.path(
+                including: [
+                    URL(fileURLWithPath: node).deletingLastPathComponent().path,
+                    URL(fileURLWithPath: executable).deletingLastPathComponent().path,
+                ],
+                then: environment["PATH"])
+        }
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {

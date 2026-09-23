@@ -2,7 +2,7 @@
 
 How QuotaBar behaves and why, for contributors and agents. `../README.md` covers what it is, what it needs and how to build it.
 
-- [`refresh.md`](refresh.md) - the refresh schedule, the read-only refresh preference, and how `quota-axi` and Node are found when macOS supplies a minimal `PATH`.
+- [`refresh.md`](refresh.md) - the refresh schedule, the read-only refresh preference, and bundled quota-axi resolution with a development fallback.
 - [`menu-bar.md`](menu-bar.md) - the status item: what it draws, how it is sized, the appearance settings, the backing plate, and the sticky provider selection.
 - [`pages.md`](pages.md) - the popover's pages, the type scale, and why nothing moves when a number changes.
 - [`providers.md`](providers.md) - session versus weekly windows, brand colors, and provider marks.

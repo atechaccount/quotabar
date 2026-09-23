@@ -1,6 +1,6 @@
 # QuotaBar
 
-A small native macOS menu bar app that shows every AI coding provider quota reported by [`quota-axi`](https://github.com/durell/quota-axi).
+A small native macOS menu bar app that shows every AI coding provider quota reported by [`quota-axi`](https://github.com/kunchenguid/quota-axi).
 
 QuotaBar never contacts provider APIs, reads credentials, or computes provider quota itself.
 It runs `quota-axi --json --full` and renders that output as the single source of truth.
@@ -9,11 +9,10 @@ It runs `quota-axi --json --full` and renders that output as the single source o
 
 - macOS 14 or newer.
 - Swift 6 and the macOS SDK from Xcode Command Line Tools.
-- `quota-axi` installed with pnpm, Homebrew, or on `PATH`.
-- Node.js installed with nvm, Homebrew, Volta, pnpm, or on `PATH`.
+- Node.js and npm to build the app.
 
-QuotaBar finds both tools itself when launched from the Dock, Spotlight, or at login, where macOS supplies a minimal `PATH`.
-If either tool is missing, QuotaBar names it and lists the locations it checked while keeping its refresh schedule alive.
+The built app includes quota-axi and its runtime, so users need neither a global quota-axi install nor Node.js.
+Development builds without the bundled executable can still use a global quota-axi install and Node.js.
 
 ## Build and install
 
@@ -22,7 +21,7 @@ If either tool is missing, QuotaBar names it and lists the locations it checked 
 ./build.sh
 ```
 
-The build script creates and ad-hoc signs `dist/QuotaBar.app`.
+The build script fetches the pinned quota-axi release, compiles its standalone executable with Bun, and creates and ad-hoc signs `dist/QuotaBar.app`.
 The test wrapper runs `swift test` with the framework flags required by Command Line Tools installations that do not include the `xctest` loader.
 
 Install it with:

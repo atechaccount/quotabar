@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd -P)"
 APP="$ROOT/dist/QuotaBar.app"
 ICONSET="$ROOT/.build/QuotaBar.iconset"
 
-for tool in swift sips iconutil codesign plutil; do
+for tool in swift sips iconutil codesign plutil npm; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "error: required tool '$tool' was not found" >&2
         exit 1
@@ -14,6 +14,7 @@ for tool in swift sips iconutil codesign plutil; do
 done
 
 cd "$ROOT"
+"$ROOT/Scripts/BuildQuotaAXI.sh"
 echo "Building QuotaBar (release)…"
 swift build -c release
 BIN_DIR="$(swift build -c release --show-bin-path)"
@@ -26,6 +27,7 @@ fi
 rm -rf "$APP" "$ICONSET"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$ICONSET"
 cp "$BIN_DIR/QuotaBar" "$APP/Contents/MacOS/QuotaBar"
+cp "$ROOT/.build/quota-axi-bundle/quota-axi" "$APP/Contents/MacOS/quota-axi"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
 # The real provider marks live in the SwiftPM resource bundle. Without this the

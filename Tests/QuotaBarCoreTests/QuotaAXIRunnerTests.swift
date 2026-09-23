@@ -4,6 +4,25 @@ import Testing
 
 struct QuotaAXIRunnerTests {
     @Test
+    func testPrefersBundledExecutableWithoutNode() async throws {
+        let root = testRoot("bundled")
+        defer { removeTestRoot(root) }
+
+        let bundled = root + "/MacOS/quota-axi"
+        try writeExecutable("#!/bin/sh\nprintf '%s\\n' '{\"providers\":[]}'\n", at: bundled)
+        try writeExecutable("#!/bin/sh\nexit 9\n", at: root + "/global/quota-axi")
+
+        let environment = ["HOME": root, "PATH": root + "/global"]
+        #expect(QuotaAXIRunner.resolveExecutable(
+            environment: environment,
+            bundledExecutablePath: bundled) == bundled)
+        let snapshot = try await QuotaAXIRunner(
+            environment: environment,
+            bundledExecutablePath: bundled).run(readOnly: true)
+        #expect(snapshot.providers.isEmpty)
+    }
+
+    @Test
     func testRunsPNPMShimWithNVMNodeOutsideBarePath() async throws {
         let root = testRoot("runs")
         defer { removeTestRoot(root) }
@@ -11,7 +30,9 @@ struct QuotaAXIRunnerTests {
         try writeExecutable("#!/bin/sh\nexec node \"$@\"\n", at: root + "/Library/pnpm/bin/quota-axi")
         try writeExecutable("#!/bin/sh\nprintf '%s\\n' '{\"providers\":[]}'\n", at: root + "/.nvm/versions/node/v26.7.0/bin/node")
 
-        let runner = QuotaAXIRunner(environment: ["HOME": root, "PATH": "/quota-bar-bare-path"])
+        let runner = QuotaAXIRunner(
+            environment: ["HOME": root, "PATH": "/quota-bar-bare-path"],
+            bundledExecutablePath: root + "/missing/quota-axi")
         let snapshot = try await runner.run(readOnly: true)
 
         #expect(snapshot.providers.isEmpty)
@@ -52,11 +73,14 @@ struct QuotaAXIRunnerTests {
 
     private func removeTestRoot(_ root: String) {
         let files = [
+            root + "/MacOS/quota-axi",
+            root + "/global/quota-axi",
             root + "/Library/pnpm/bin/quota-axi",
             root + "/.nvm/versions/node/v26.7.0/bin/node",
         ]
         for path in files { unlink(path) }
         let directories = [
+            root + "/MacOS", root + "/global",
             root + "/Library/pnpm/bin", root + "/Library/pnpm", root + "/Library",
             root + "/.nvm/versions/node/v26.7.0/bin", root + "/.nvm/versions/node/v26.7.0",
             root + "/.nvm/versions/node", root + "/.nvm/versions", root + "/.nvm", root,

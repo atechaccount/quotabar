@@ -14,7 +14,8 @@
 The Read-only refresh preference adds `--no-credential-refresh`.
 Turn it on to avoid credential renewal, with the tradeoff that displayed quota can become stale.
 
-## Finding `quota-axi` and Node
+## Finding `quota-axi`
 
-QuotaBar resolves both `quota-axi` and the Node executable its shim needs when launched from the Dock, Spotlight, or at login, where macOS supplies a minimal `PATH`.
-It searches pnpm locations, both Homebrew prefixes, and versioned nvm directories instead of depending on a terminal's login environment.
+QuotaBar runs the standalone quota-axi executable beside its own app executable first.
+It does not need Node.js at runtime when that bundled copy is present.
+For development builds without the bundled copy, it still searches `PATH`, pnpm locations, and both Homebrew prefixes for quota-axi, then searches those locations and versioned nvm directories for the Node executable its shim needs.
