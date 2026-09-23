@@ -472,7 +472,7 @@ struct OverviewProviderRow: View {
             // A Grid, so the label column is as wide as this provider's longest
             // window name and the meters and values still line up down the rows.
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 7) {
-                ForEach(provider.allWindows) { window in
+                ForEach(provider.usageWindows) { window in
                     OverviewLane(window: window, accent: accent)
                 }
             }
@@ -559,8 +559,24 @@ struct SignedInProviderPage: View {
             header
             Divider().padding(.top, 14)
 
-            ForEach(provider.allWindows) { window in
+            ForEach(provider.usageWindows) { window in
                 WindowSection(window: window, accent: accent, now: now)
+            }
+
+            if let extra = QuotaFormatting.extraUsageLine(
+                spentUsd: provider.extraUsageWindow?.spentUsd,
+                limitUsd: provider.extraUsageWindow?.limitUsd)
+            {
+                HStack(spacing: 8) {
+                    Text("Extra usage")
+                        .font(Typography.font(11))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text(extra)
+                        .font(Typography.font(11, weight: .medium))
+                        .monospacedDigit()
+                }
+                .padding(.top, 14)
             }
 
             if let credits = creditsLine {

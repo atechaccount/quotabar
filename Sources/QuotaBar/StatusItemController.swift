@@ -128,6 +128,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     static func statusTitle(
         mark: NSImage,
         percent: String,
+        extraUsage: String? = nil,
         appearance: MenuBarAppearance = .default) -> NSAttributedString
     {
         let titleFont = font(for: appearance.font)
@@ -172,6 +173,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 range: NSRange(location: numberStart, length: percent.count))
         }
         correctReservedPadding(in: title, from: numberStart, font: titleFont)
+        if let extraUsage {
+            title.append(NSAttributedString(string: "  \(extraUsage)", attributes: [
+                .font: titleFont,
+                .foregroundColor: appearance.textColor().map { NSColor($0) } ?? NSColor.labelColor,
+            ]))
+        }
         return title
     }
 
@@ -298,7 +305,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.imagePosition = .noImage
         button.font = Self.font(for: appearance.font)
         button.attributedTitle = Self.statusTitle(
-            mark: image, percent: title, appearance: appearance)
+            mark: image, percent: title, extraUsage: readout.extraUsageSpent,
+            appearance: appearance)
         button.layoutSubtreeIfNeeded()
         applyWholeItemPlate(to: button, appearance: appearance, dark: dark)
         button.toolTip = readout.accessibilityDescription
@@ -306,7 +314,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
         rendered = RenderedStatusItem(
             provider: readout.provider,
-            title: title,
+            title: title + (readout.extraUsageSpent.map { "  \($0)" } ?? ""),
             hasImage: Self.markImage(in: button.attributedTitle) != nil,
             imageIsTemplate: Self.markImage(in: button.attributedTitle)?.isTemplate ?? false,
             imageSize: Self.markImage(in: button.attributedTitle)?.size ?? .zero,

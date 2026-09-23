@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let directory = environment["QUOTABAR_RENDER"], !directory.isEmpty {
             Task { @MainActor in
-                RenderCheck.run(into: directory)
+                await RenderCheck.run(into: directory)
                 NSApp.terminate(nil)
             }
             return

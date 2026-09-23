@@ -72,7 +72,7 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
             || (quotaSemantics?.effectiveAvailability ?? []).contains {
                 $0.effectivePercentRemaining != nil
             }
-            || allWindows.contains { $0.percentRemaining != nil }
+            || usageWindows.contains { $0.percentRemaining != nil }
     }
 
     public var usageState: QuotaUsageState {
@@ -81,15 +81,22 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     }
 
     public var allWindows: [QuotaWindow] { windows ?? [] }
+    public var extraUsageWindow: QuotaWindow? {
+        guard provider == "claude" else { return nil }
+        return allWindows.first { $0.id == "extra_usage" }
+    }
+    public var usageWindows: [QuotaWindow] {
+        allWindows.filter { provider != "claude" || $0.id != "extra_usage" }
+    }
 
     /// The short rolling window. On entry-tier plans this is the one that actually
     /// constrains day-to-day work, so it is the headline everywhere in the UI.
     public var sessionWindow: QuotaWindow? {
-        allWindows.first { $0.isSession }
+        usageWindows.first { $0.isSession }
     }
 
     public var weeklyWindow: QuotaWindow? {
-        allWindows.first { $0.isWeekly }
+        usageWindows.first { $0.isWeekly }
     }
 
     /// Session first, then the narrowest effective-availability scope, then the
@@ -111,7 +118,7 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
         if let lowest = scopes.min(by: {
             ($0.effectivePercentRemaining ?? 101) < ($1.effectivePercentRemaining ?? 101)
         }), let remaining = lowest.effectivePercentRemaining {
-            let matching = allWindows.first { $0.matchesScope(lowest.scope) }
+            let matching = usageWindows.first { $0.matchesScope(lowest.scope) }
             return QuotaHeadline(
                 percentRemaining: remaining,
                 windowLabel: matching?.displayLabel ?? QuotaHeadline.humanize(lowest.scope),
@@ -119,7 +126,7 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
                 isSession: false)
         }
 
-        if let lowest = allWindows
+        if let lowest = usageWindows
             .filter({ $0.percentRemaining != nil })
             .min(by: { ($0.percentRemaining ?? 101) < ($1.percentRemaining ?? 101) }),
             let remaining = lowest.percentRemaining
@@ -137,7 +144,7 @@ public struct QuotaProvider: Decodable, Identifiable, Sendable {
     public var headlineRemaining: Double? { headline?.percentRemaining }
 
     private var soonestResetRaw: String? {
-        allWindows.compactMap(\.resetsAt).min()
+        usageWindows.compactMap(\.resetsAt).min()
     }
 
     enum CodingKeys: String, CodingKey {
@@ -223,6 +230,8 @@ public struct QuotaWindow: Decodable, Identifiable, Sendable {
     public let kind: String?
     public let percentUsed: Double?
     public let percentRemaining: Double?
+    public let spentUsd: Double?
+    public let limitUsd: Double?
     public let resetsAt: String?
     public let windowSeconds: Double?
 
@@ -262,6 +271,8 @@ public struct QuotaWindow: Decodable, Identifiable, Sendable {
         case kind
         case percentUsed
         case percentRemaining
+        case spentUsd
+        case limitUsd
         case resetsAt
         case windowSeconds
     }
@@ -273,6 +284,8 @@ public struct QuotaWindow: Decodable, Identifiable, Sendable {
         kind = values.lossy(String.self, forKey: .kind)
         percentUsed = values.lossy(Double.self, forKey: .percentUsed)
         percentRemaining = values.lossy(Double.self, forKey: .percentRemaining)
+        spentUsd = values.lossy(Double.self, forKey: .spentUsd)
+        limitUsd = values.lossy(Double.self, forKey: .limitUsd)
         resetsAt = values.lossy(String.self, forKey: .resetsAt)
         windowSeconds = values.lossy(Double.self, forKey: .windowSeconds)
     }

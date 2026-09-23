@@ -25,6 +25,7 @@ public struct MenuBarReadout: Sendable, Equatable {
     public let providerLabel: String?
     public let percentRemaining: Double?
     public let windowLabel: String?
+    public let extraUsageSpent: String?
     public let usageState: QuotaUsageState
 
     public init(
@@ -32,12 +33,14 @@ public struct MenuBarReadout: Sendable, Equatable {
         providerLabel: String?,
         percentRemaining: Double?,
         windowLabel: String?,
+        extraUsageSpent: String? = nil,
         usageState: QuotaUsageState = .unknown)
     {
         self.provider = provider
         self.providerLabel = providerLabel
         self.percentRemaining = percentRemaining
         self.windowLabel = windowLabel
+        self.extraUsageSpent = extraUsageSpent
         self.usageState = usageState
     }
 
@@ -47,13 +50,15 @@ public struct MenuBarReadout: Sendable, Equatable {
     public var accessibilityDescription: String {
         guard let percentRemaining else {
             guard let name = providerLabel ?? provider else { return "QuotaBar" }
-            return "QuotaBar, \(name) usage unknown"
+            let extra = extraUsageSpent.map { ", \($0) extra usage spent" } ?? ""
+            return "QuotaBar, \(name) usage unknown\(extra)"
         }
         let percent = QuotaFormatting.percent(percentRemaining)
         let name = providerLabel ?? provider ?? "quota"
         let window = windowLabel.map { " \($0)" } ?? ""
         let stale = usageState == .stale ? ", stale" : ""
-        return "QuotaBar, \(name)\(window) \(percent) remaining\(stale)"
+        let extra = extraUsageSpent.map { ", \($0) extra usage spent" } ?? ""
+        return "QuotaBar, \(name)\(window) \(percent) remaining\(extra)\(stale)"
     }
 }
 
@@ -92,6 +97,7 @@ public enum MenuBarReadoutResolver {
                 providerLabel: chosen.displayName,
                 percentRemaining: nil,
                 windowLabel: nil,
+                extraUsageSpent: QuotaFormatting.extraUsageSpent(chosen.extraUsageWindow?.spentUsd),
                 usageState: .unknown)
         }
         return MenuBarReadout(
@@ -99,6 +105,7 @@ public enum MenuBarReadoutResolver {
             providerLabel: chosen.displayName,
             percentRemaining: headline.percentRemaining,
             windowLabel: headline.windowLabel,
+            extraUsageSpent: QuotaFormatting.extraUsageSpent(chosen.extraUsageWindow?.spentUsd),
             usageState: chosen.usageState)
     }
 

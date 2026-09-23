@@ -39,7 +39,7 @@ enum RenderCheck {
 
     private static var sample: String { sample(agyWindows: agyWindowsBoth) }
 
-    private static func sample(agyWindows: String) -> String { """
+    private static func sample(agyWindows: String, extraUsage: String = "") -> String { """
     {"generatedAt":"2026-09-20T15:24:02.920Z","providers":[
       {"provider":"claude","label":"Claude","source":"oauth","plan":"pro",
        "account":{"email":"service.5k7fv@simplelogin.com"},
@@ -48,7 +48,7 @@ enum RenderCheck {
          {"id":"five_hour","label":"session","kind":"session","percentRemaining":100,
           "windowSeconds":18000,"resetsAt":"\(iso(4.9))"},
          {"id":"seven_day","label":"week","kind":"weekly","percentRemaining":46,
-          "windowSeconds":604800,"resetsAt":"\(iso(83))"}]},
+          "windowSeconds":604800,"resetsAt":"\(iso(83))"}\(extraUsage)]},
       {"provider":"codex","label":"Codex","source":"oauth","plan":"plus",
        "account":{"email":"buy@durellgill.com"},
        "state":{"status":"fresh"},
@@ -83,7 +83,7 @@ enum RenderCheck {
        "state":{"status":"auth_required","sourcesTried":["pi:commandcode","commandcode-cli"]}}]}
     """ }
 
-    static func run(into directory: String) {
+    static func run(into directory: String) async {
         let root = URL(fileURLWithPath: directory, isDirectory: true)
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -128,6 +128,56 @@ enum RenderCheck {
         write(menuBarColumnSheet(), to: root.appendingPathComponent("menubar-column.png"))
         write(menuBarMarkStyleSheet(), to: root.appendingPathComponent("menubar-mark-style.png"))
         write(menuBarPlateSheet(), to: root.appendingPathComponent("menubar-plate.png"))
+
+        for (name, spent, cap) in [("420", 4.20, 20.0), ("000", 0.0, 50.0),
+                                    ("no-cap", 4.20, nil)] as [(String, Double, Double?)] {
+            let extra = ",{" + "\"id\":\"extra_usage\",\"label\":\"extra usage\","
+                + "\"kind\":\"credits\",\"spentUsd\":\(spent)"
+                + (cap.map { ",\"limitUsd\":\($0)" } ?? "") + "}"
+            if let fixture = try? QuotaParser.decode(sample(
+                agyWindows: agyWindowsBoth, extraUsage: extra)) {
+                renderExtraUsage(name: name, snapshot: fixture, into: root)
+            }
+        }
+        if let off = try? QuotaParser.decode(sample) {
+            renderExtraUsage(name: "off", snapshot: off, into: root)
+        }
+        do {
+            let live = try await QuotaAXIRunner().run(readOnly: true)
+            renderExtraUsage(name: "live", snapshot: live, into: root)
+        } catch {
+            print("RENDER extra-usage live snapshot failed: \(error)")
+        }
+    }
+
+    private static func renderExtraUsage(name: String, snapshot: QuotaSnapshot, into root: URL) {
+        let subject = model(snapshot: snapshot, focus: "claude", show: [])
+        let readout = subject.menuBarReadout
+        guard let provider = snapshot.providers.first(where: { $0.provider == "claude" }) else { return }
+        let line = QuotaFormatting.extraUsageLine(
+            spentUsd: provider.extraUsageWindow?.spentUsd,
+            limitUsd: provider.extraUsageWindow?.limitUsd)
+        let percent = readout.percentRemaining.map { StatusItemController.reservedPercent($0) }
+            ?? StatusItemController.reservedUnknown()
+        let mark = ProviderMarkImage.menuBarImage(
+            provider: "claude", dark: false, appearance: .default)
+        let title = NSMutableAttributedString(attributedString: StatusItemController.statusTitle(
+            mark: mark, percent: percent, extraUsage: readout.extraUsageSpent))
+        title.addAttribute(.foregroundColor, value: NSColor.black,
+                           range: NSRange(location: 0, length: title.length))
+        let label = title.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\u{2007}", with: " ").trimmingCharacters(in: .whitespaces)
+        print("RENDER extra-usage \(name) menu=\"\(label)\" dropdown=\"\(line ?? "-")\"")
+        write(page("claude", snapshot: snapshot, focus: "claude", dark: false),
+              to: root.appendingPathComponent("extra-usage-\(name)-dropdown.png"))
+        let width = max(200, title.size().width + 24)
+        let item = NSImage(size: NSSize(width: width, height: 28), flipped: true) { _ in
+            menuBarFill(false).setFill()
+            NSRect(x: 0, y: 0, width: width, height: 28).fill()
+            title.draw(at: NSPoint(x: 12, y: (28 - title.size().height) / 2))
+            return true
+        }
+        write(item, to: root.appendingPathComponent("extra-usage-\(name)-menubar.png"))
     }
 
     /// How wide AppKit's own padding makes a variable-length status item beyond

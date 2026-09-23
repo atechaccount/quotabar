@@ -5,6 +5,20 @@ public enum QuotaFormatting {
         "\(Int(value.rounded()))%"
     }
 
+    public static func extraUsageSpent(_ spentUsd: Double?) -> String? {
+        guard let spentUsd, spentUsd.isFinite, spentUsd >= 0 else { return nil }
+        return String(format: "$%.2f", locale: Locale(identifier: "en_US_POSIX"), spentUsd)
+    }
+
+    public static func extraUsageLine(spentUsd: Double?, limitUsd: Double?) -> String? {
+        guard let spent = extraUsageSpent(spentUsd) else { return nil }
+        if let spentUsd, let limitUsd, let cap = extraUsageSpent(limitUsd),
+           let left = extraUsageSpent(max(0, limitUsd - spentUsd)) {
+            return "\(spent) spent - \(left) left of \(cap)"
+        }
+        return "\(spent) spent - no cap"
+    }
+
     public static func date(from value: String?) -> Date? {
         guard let value else { return nil }
         let fractional = ISO8601DateFormatter()
